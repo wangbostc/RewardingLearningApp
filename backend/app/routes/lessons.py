@@ -1,105 +1,121 @@
-from flask import Blueprint, request, jsonify
-from app import db
-from app.models import Lesson, Exercise, UserProgress, ExerciseResponse, UserStats
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from app import get_db
+from app.models import Lesson, Exercise, UserProgress, LessonResponse, ExerciseResponse
+from typing import List
 
-bp = Blueprint('lessons', __name__, url_prefix='/api/lessons')
+router = APIRouter()
 
-@bp.route('', methods=['GET'])
-def get_lessons():
-    """Get all lessons, optionally filtered by difficulty."""
-    difficulty = request.args.get('difficulty')
-    category = request.args.get('category')
+@router.get("", response_model=dict)
+async def get_lessons(
+    difficulty: str = Query(None),
+    category: str = Query(None),
+    db: Session = Depends(get_db)
+):
+    """Get all lessons, optionally filtered by difficulty and category."""
 
-    query = Lesson.query
+    query = db.query(Lesson)
 
     if difficulty:
-        query = query.filter_by(difficulty=difficulty)
+        query = query.filter(Lesson.difficulty == difficulty)
     if category:
-        query = query.filter_by(category=category)
+        query = query.filter(Lesson.category == category)
 
     lessons = query.all()
 
-    return jsonify({
-        'lessons': [
-            {
-                'id': lesson.id,
-                'title': lesson.title,
-                'description': lesson.description,
-                'difficulty': lesson.difficulty,
-                'category': lesson.category,
-                'estimated_duration': lesson.estimated_duration,
-                'exercise_count': len(lesson.exercises)
-            }
-            for lesson in lessons
-        ]
-    }), 200
+    lesson_responses = [
+        LessonResponse(
+            id=lesson.id,
+            title=lesson.title,
+            description=lesson.description,
+            difficulty=lesson.difficulty,
+            category=lesson.category,
+            estimated_duration=lesson.estimated_duration,
+            exercise_count=len(lesson.exercises)
+        )
+        for lesson in lessons
+    ]
 
-@bp.route('/<int:lesson_id>', methods=['GET'])
-def get_lesson(lesson_id):
+    return {"lessons": lesson_responses}
+
+@router.get("/{lesson_id}", response_model=dict)
+async def get_lesson(lesson_id: int, db: Session = Depends(get_db)):
     """Get lesson details with exercises."""
-    lesson = Lesson.query.get(lesson_id)
+
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
 
     if not lesson:
-        return jsonify({'error': 'Lesson not found'}), 404
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lesson not found"
+        )
 
     exercises = sorted(lesson.exercises, key=lambda x: x.order or x.id)
 
-    return jsonify({
-        'lesson': {
-            'id': lesson.id,
-            'title': lesson.title,
-            'description': lesson.description,
-            'difficulty': lesson.difficulty,
-            'category': lesson.category,
-            'estimated_duration': lesson.estimated_duration
-        },
-        'exercises': [
-            {
-                'id': exercise.id,
-                'type': exercise.type,
-                'question': exercise.question,
-                'content': exercise.content,
-                'points_value': exercise.points_value,
-                'order': exercise.order
-            }
-            for exercise in exercises
-        ]
-    }), 200
+    exercise_responses = [
+        ExerciseResponse(
+            id=ex.id,
+            lesson_id=ex.lesson_id,
+            type=ex.type,
+            question=ex.question,
+            content=ex.content,
+            points_value=ex.points_value,
+            order=ex.order
+        )
+        for ex in exercises
+    ]
 
-@bp.route('/<int:user_id>/progress/<int:lesson_id>', methods=['GET'])
-def get_lesson_progress(user_id, lesson_id):
+    return {
+        "lesson": {
+            "id": lesson.id,
+            "title": lesson.title,
+            "description": lesson.description,
+            "difficulty": lesson.difficulty,
+            "category": lesson.category,
+            "estimated_duration": lesson.estimated_duration
+        },
+        "exercises": exercise_responses
+    }
+
+@router.get("/{user_id}/progress/{lesson_id}", response_model=dict)
+async def get_lesson_progress(user_id: int, lesson_id: int, db: Session = Depends(get_db)):
     """Get user's progress on a specific lesson."""
-    progress = UserProgress.query.filter_by(
-        user_id=user_id,
-        lesson_id=lesson_id
+
+    progress = db.query(UserProgress).filter(
+        (UserProgress.user_id == user_id) & (UserProgress.lesson_id == lesson_id)
     ).first()
 
     if not progress:
-        return jsonify({'error': 'Progress not found'}), 404
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Progress not found"
+        )
 
-    return jsonify({
-        'progress': {
-            'lesson_id': progress.lesson_id,
-            'status': progress.status,
-            'progress_percentage': progress.progress_percentage,
-            'started_at': progress.started_at.isoformat(),
-            'completed_at': progress.completed_at.isoformat() if progress.completed_at else None
+    return {
+        "progress": {
+            "lesson_id": progress.lesson_id,
+            "status": progress.status,
+            "progress_percentage": progress.progress_percentage,
+            "started_at": progress.started_at.isoformat(),
+            "completed_at": progress.completed_at.isoformat() if progress.completed_at else None
         }
-    }), 200
+    }
 
-@bp.route('/<int:user_id>/start/<int:lesson_id>', methods=['POST'])
-def start_lesson(user_id, lesson_id):
+@router.post("/{user_id}/start/{lesson_id}", response_model=dict, status_code=status.HTTP_200_OK)
+async def start_lesson(user_id: int, lesson_id: int, db: Session = Depends(get_db)):
     """Start a lesson for a user."""
-    lesson = Lesson.query.get(lesson_id)
+
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
 
     if not lesson:
-        return jsonify({'error': 'Lesson not found'}), 404
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lesson not found"
+        )
 
     # Check if progress already exists
-    progress = UserProgress.query.filter_by(
-        user_id=user_id,
-        lesson_id=lesson_id
+    progress = db.query(UserProgress).filter(
+        (UserProgress.user_id == user_id) & (UserProgress.lesson_id == lesson_id)
     ).first()
 
     if not progress:
@@ -108,22 +124,25 @@ def start_lesson(user_id, lesson_id):
             lesson_id=lesson_id,
             status='in_progress'
         )
-        db.session.add(progress)
+        db.add(progress)
     else:
         progress.status = 'in_progress'
-        progress.started_at = datetime.utcnow()
 
     try:
-        db.session.commit()
-        return jsonify({
-            'message': 'Lesson started',
-            'progress': {
-                'lesson_id': progress.lesson_id,
-                'status': progress.status,
-                'progress_percentage': progress.progress_percentage
+        db.commit()
+        db.refresh(progress)
+        return {
+            "message": "Lesson started",
+            "progress": {
+                "lesson_id": progress.lesson_id,
+                "status": progress.status,
+                "progress_percentage": progress.progress_percentage
             }
-        }), 200
+        }
     except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
