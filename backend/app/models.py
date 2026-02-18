@@ -72,6 +72,7 @@ class UserStats(Base):
     def __repr__(self):
         return f'<UserStats user_id={self.user_id}>'
 
+
 class Lesson(Base):
     __tablename__ = 'lessons'
 
@@ -89,6 +90,7 @@ class Lesson(Base):
 
     def __repr__(self):
         return f'<Lesson {self.title}>'
+
 
 class Exercise(Base):
     __tablename__ = 'exercises'
@@ -108,6 +110,7 @@ class Exercise(Base):
     def __repr__(self):
         return f'<Exercise {self.id} lesson_id={self.lesson_id}>'
 
+
 class UserProgress(Base):
     __tablename__ = 'user_progress'
 
@@ -122,8 +125,9 @@ class UserProgress(Base):
     user = relationship("User", back_populates="progress")
     lesson = relationship("Lesson", back_populates="progress")
 
-    def __repr__(self):
-        return f'<UserProgress user_id={self.user_id} lesson_id={self.lesson_id}>'
+    # Relationships
+    user = relationship("User", back_populates="progress")
+    lesson = relationship("Lesson", back_populates="progress")
 
 class ExerciseResponse(Base):
     __tablename__ = 'exercise_responses'
@@ -140,8 +144,10 @@ class ExerciseResponse(Base):
     exercise = relationship("Exercise", back_populates="responses")
     user = relationship("User", back_populates="responses")
 
-    def __repr__(self):
-        return f'<ExerciseResponse exercise_id={self.exercise_id} correct={self.is_correct}>'
+
+    # Relationships
+    exercise = relationship("Exercise", back_populates="responses")
+    user = relationship("User", back_populates="exercise_responses")
 
 class Achievement(Base):
     __tablename__ = 'achievements'
@@ -158,6 +164,7 @@ class Achievement(Base):
     def __repr__(self):
         return f'<Achievement {self.name}>'
 
+
 class Reward(Base):
     __tablename__ = 'rewards'
 
@@ -170,8 +177,122 @@ class Reward(Base):
 
     user = relationship("User", back_populates="rewards")
 
-    def __repr__(self):
-        return f'<Reward {self.reward_type} user_id={self.user_id}>'
+
+    # Relationships
+    user = relationship("User", back_populates="rewards")
+
+# ==================== Pydantic Schemas ====================
+
+class UserRegister(BaseModel):
+    username: str = Field(..., min_length=3, max_length=80)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    age: Optional[int] = None
+    native_language: Optional[str] = None
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    age: Optional[int] = None
+    native_language: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserStatsResponse(BaseModel):
+    id: int
+    user_id: int
+    total_points: int
+    level: int
+    streak_days: int
+    accuracy_rate: float
+    total_lessons_completed: int
+    current_difficulty: str
+    last_activity: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class UserProfileResponse(BaseModel):
+    user: UserResponse
+    stats: Optional[UserStatsResponse] = None
+
+class LessonResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    difficulty: str
+    category: Optional[str] = None
+    estimated_duration: Optional[int] = None
+    exercise_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+class ExerciseResponse(BaseModel):
+    id: int
+    lesson_id: int
+    type: str
+    question: str
+    content: Optional[dict] = None
+    points_value: int
+    order: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class ExerciseSubmit(BaseModel):
+    answer: str | dict
+    time_spent: Optional[int] = None
+
+class UserProgressResponse(BaseModel):
+    lesson_id: int
+    lesson_title: Optional[str] = None
+    status: str
+    progress_percentage: float
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class UserProgressDetailResponse(BaseModel):
+    stats: UserStatsResponse
+    progress: List[UserProgressResponse] = []
+
+class AchievementResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    badge_icon: Optional[str] = None
+    unlocked_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class LeaderboardEntry(BaseModel):
+    rank: int
+    user_id: int
+    username: str
+    points: int
+    level: int
+    accuracy_rate: float
+
+class RewardResponse(BaseModel):
+    id: int
+    reward_type: str
+    amount: Optional[int] = None
+    reason: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 # ==================== Pydantic Models (for request/response validation) ====================
 
