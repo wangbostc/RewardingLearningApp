@@ -1,104 +1,109 @@
-from flask import Blueprint, request, jsonify
-from app import db
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from app import get_db
 from app.models import Achievement, UserAchievement, UserStats, Reward
 from datetime import datetime
 
-bp = Blueprint('rewards', __name__, url_prefix='/api/rewards')
+router = APIRouter(prefix="/rewards", tags=["rewards"])
 
-@bp.route('/achievements/<int:user_id>', methods=['GET'])
-def get_user_achievements(user_id):
+@router.get("/achievements/{user_id}", response_model=dict)
+async def get_user_achievements(user_id: int, db: Session = Depends(get_db)):
     """Get user's achievements."""
-    achievements = UserAchievement.query.filter_by(user_id=user_id).all()
+    achievements = db.query(UserAchievement).filter(UserAchievement.user_id == user_id).all()
 
-    return jsonify({
+    return {
         'achievements': [
             {
                 'id': ua.achievement_id,
-                'name': ua.Achievement.name if hasattr(ua, 'Achievement') else 'Unknown',
-                'description': ua.Achievement.description if hasattr(ua, 'Achievement') else '',
-                'badge_icon': ua.Achievement.badge_icon if hasattr(ua, 'Achievement') else '',
+                'name': ua.achievement.name if ua.achievement else 'Unknown',
+                'description': ua.achievement.description if ua.achievement else '',
+                'badge_icon': ua.achievement.badge_icon if ua.achievement else '',
                 'unlocked_at': ua.unlocked_at.isoformat()
             }
             for ua in achievements
         ]
-    }), 200
+    }
 
-@bp.route('/check-achievements/<int:user_id>', methods=['POST'])
-def check_achievements(user_id):
+@router.post("/check-achievements/{user_id}", response_model=dict)
+async def check_achievements(user_id: int, db: Session = Depends(get_db)):
     """Check if user has earned any new achievements."""
-    stats = UserStats.query.filter_by(user_id=user_id).first()
+    stats = db.query(UserStats).filter(UserStats.user_id == user_id).first()
 
     if not stats:
-        return jsonify({'error': 'User not found'}), 404
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
 
     new_achievements = []
 
     # Check for streaks
     if stats.streak_days >= 7:
-        achievement = Achievement.query.filter_by(
-            condition_type='streak',
-            condition_value=7
+        achievement = db.query(Achievement).filter(
+            Achievement.condition_type == 'streak',
+            Achievement.condition_value == 7
         ).first()
         if achievement:
-            existing = UserAchievement.query.filter_by(
-                user_id=user_id,
-                achievement_id=achievement.id
+            existing = db.query(UserAchievement).filter(
+                UserAchievement.user_id == user_id,
+                UserAchievement.achievement_id == achievement.id
             ).first()
             if not existing:
                 ua = UserAchievement(user_id=user_id, achievement_id=achievement.id)
-                db.session.add(ua)
+                db.add(ua)
                 new_achievements.append(achievement.name)
 
     # Check for points milestones
     if stats.total_points >= 100:
-        achievement = Achievement.query.filter_by(
-            condition_type='points',
-            condition_value=100
+        achievement = db.query(Achievement).filter(
+            Achievement.condition_type == 'points',
+            Achievement.condition_value == 100
         ).first()
         if achievement:
-            existing = UserAchievement.query.filter_by(
-                user_id=user_id,
-                achievement_id=achievement.id
+            existing = db.query(UserAchievement).filter(
+                UserAchievement.user_id == user_id,
+                UserAchievement.achievement_id == achievement.id
             ).first()
             if not existing:
                 ua = UserAchievement(user_id=user_id, achievement_id=achievement.id)
-                db.session.add(ua)
+                db.add(ua)
                 new_achievements.append(achievement.name)
 
     # Check for lessons completed
     if stats.total_lessons_completed >= 5:
-        achievement = Achievement.query.filter_by(
-            condition_type='lessons_completed',
-            condition_value=5
+        achievement = db.query(Achievement).filter(
+            Achievement.condition_type == 'lessons_completed',
+            Achievement.condition_value == 5
         ).first()
         if achievement:
-            existing = UserAchievement.query.filter_by(
-                user_id=user_id,
-                achievement_id=achievement.id
+            existing = db.query(UserAchievement).filter(
+                UserAchievement.user_id == user_id,
+                UserAchievement.achievement_id == achievement.id
             ).first()
             if not existing:
                 ua = UserAchievement(user_id=user_id, achievement_id=achievement.id)
-                db.session.add(ua)
+                db.add(ua)
                 new_achievements.append(achievement.name)
 
     try:
-        db.session.commit()
-        return jsonify({
+        db.commit()
+        return {
             'new_achievements': new_achievements,
             'message': f'{len(new_achievements)} new achievement(s) unlocked!' if new_achievements else 'No new achievements'
-        }), 200
+        }
     except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
-@bp.route('/leaderboard', methods=['GET'])
-def get_leaderboard():
+@router.get("/leaderboard", response_model=dict)
+async def get_leaderboard(limit: int = Query(10), db: Session = Depends(get_db)):
     """Get top users by points."""
-    limit = request.args.get('limit', 10, type=int)
+    stats = db.query(UserStats).order_by(UserStats.total_points.desc()).limit(limit).all()
 
-    stats = UserStats.query.order_by(UserStats.total_points.desc()).limit(limit).all()
-
-    return jsonify({
+    return {
         'leaderboard': [
             {
                 'rank': i + 1,
@@ -110,18 +115,20 @@ def get_leaderboard():
             }
             for i, stat in enumerate(stats)
         ]
-    }), 200
+    }
 
-@bp.route('/user/<int:user_id>/rewards', methods=['GET'])
-def get_user_rewards(user_id):
+@router.get("/user/{user_id}/rewards", response_model=dict)
+async def get_user_rewards(
+    user_id: int,
+    limit: int = Query(20),
+    db: Session = Depends(get_db)
+):
     """Get user's recent rewards."""
-    limit = request.args.get('limit', 20, type=int)
+    rewards = db.query(Reward).filter(
+        Reward.user_id == user_id
+    ).order_by(Reward.created_at.desc()).limit(limit).all()
 
-    rewards = Reward.query.filter_by(user_id=user_id).order_by(
-        Reward.created_at.desc()
-    ).limit(limit).all()
-
-    return jsonify({
+    return {
         'rewards': [
             {
                 'id': reward.id,
@@ -132,5 +139,5 @@ def get_user_rewards(user_id):
             }
             for reward in rewards
         ]
-    }), 200
+    }
 
