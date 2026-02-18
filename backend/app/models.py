@@ -1,166 +1,270 @@
-from app import db
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Table, JSON, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
+from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime
 from enum import Enum
+from typing import Optional, List
 
-class DifficultyLevel(Enum):
+# SQLAlchemy Base
+Base = declarative_base()
+
+# Enums
+class DifficultyLevel(str, Enum):
     BEGINNER = "beginner"
     ELEMENTARY = "elementary"
     INTERMEDIATE = "intermediate"
     ADVANCED = "advanced"
 
-class ExerciseType(Enum):
+class ExerciseType(str, Enum):
     MULTIPLE_CHOICE = "multiple_choice"
     FILL_BLANK = "fill_blank"
     LISTENING = "listening"
     SPEAKING = "speaking"
 
-# User Models
-class User(db.Model):
+# Association table for user achievements
+user_achievements = Table(
+    'user_achievements',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('achievement_id', Integer, ForeignKey('achievements.id'), primary_key=True),
+    Column('unlocked_at', DateTime, default=datetime.utcnow)
+)
+
+# ==================== SQLAlchemy Models ====================
+
+class User(Base):
     __tablename__ = 'users'
 
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    age = db.Column(db.Integer)
-    native_language = db.Column(db.String(50))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    username = Column(String(80), unique=True, nullable=False, index=True)
+    email = Column(String(120), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    age = Column(Integer, nullable=True)
+    native_language = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    progress = db.relationship('UserProgress', back_populates='user', cascade='all, delete-orphan')
-    stats = db.relationship('UserStats', back_populates='user', uselist=False, cascade='all, delete-orphan')
-    achievements = db.relationship('Achievement', secondary='user_achievements', back_populates='users')
+    stats = relationship("UserStats", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    progress = relationship("UserProgress", back_populates="user", cascade="all, delete-orphan")
+    achievements = relationship("Achievement", secondary=user_achievements, back_populates="users")
+    exercise_responses = relationship("ExerciseResponse", back_populates="user", cascade="all, delete-orphan")
+    rewards = relationship("Reward", back_populates="user", cascade="all, delete-orphan")
 
-    def __repr__(self):
-        return f'<User {self.username}>'
-
-class UserStats(db.Model):
+class UserStats(Base):
     __tablename__ = 'user_stats'
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
-    total_points = db.Column(db.Integer, default=0)
-    level = db.Column(db.Integer, default=1)
-    streak_days = db.Column(db.Integer, default=0)
-    last_activity = db.Column(db.DateTime)
-    total_lessons_completed = db.Column(db.Integer, default=0)
-    current_difficulty = db.Column(db.String(20), default=DifficultyLevel.BEGINNER.value)
-    accuracy_rate = db.Column(db.Float, default=0.0)  # Percentage 0-100
-
-    user = db.relationship('User', back_populates='stats')
-
-    def __repr__(self):
-        return f'<UserStats user_id={self.user_id} level={self.level}>'
-
-# Lesson Models
-class Lesson(db.Model):
-    __tablename__ = 'lessons'
-
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(200), nullable=False)
-    description = db.Column(db.Text)
-    difficulty = db.Column(db.String(20), default=DifficultyLevel.BEGINNER.value)
-    category = db.Column(db.String(100))  # e.g., "vocab", "grammar", "conversation"
-    estimated_duration = db.Column(db.Integer)  # in minutes
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True, index=True)
+    total_points = Column(Integer, default=0)
+    level = Column(Integer, default=1)
+    streak_days = Column(Integer, default=0)
+    last_activity = Column(DateTime, nullable=True)
+    total_lessons_completed = Column(Integer, default=0)
+    current_difficulty = Column(String(20), default=DifficultyLevel.BEGINNER.value)
+    accuracy_rate = Column(Float, default=0.0)
 
     # Relationships
-    exercises = db.relationship('Exercise', back_populates='lesson', cascade='all, delete-orphan')
-    progress = db.relationship('UserProgress', back_populates='lesson', cascade='all, delete-orphan')
+    user = relationship("User", back_populates="stats")
 
-    def __repr__(self):
-        return f'<Lesson {self.title}>'
+class Lesson(Base):
+    __tablename__ = 'lessons'
 
-class Exercise(db.Model):
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    difficulty = Column(String(20), default=DifficultyLevel.BEGINNER.value, index=True)
+    category = Column(String(100), nullable=True, index=True)
+    estimated_duration = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    exercises = relationship("Exercise", back_populates="lesson", cascade="all, delete-orphan")
+    progress = relationship("UserProgress", back_populates="lesson", cascade="all, delete-orphan")
+
+class Exercise(Base):
     __tablename__ = 'exercises'
 
-    id = db.Column(db.Integer, primary_key=True)
-    lesson_id = db.Column(db.Integer, db.ForeignKey('lessons.id'), nullable=False)
-    type = db.Column(db.String(20), nullable=False)  # multiple_choice, fill_blank, etc.
-    question = db.Column(db.Text, nullable=False)
-    content = db.Column(db.JSON)  # Stores options, correct_answer, etc.
-    points_value = db.Column(db.Integer, default=10)
-    order = db.Column(db.Integer)  # Order within lesson
+    id = Column(Integer, primary_key=True)
+    lesson_id = Column(Integer, ForeignKey('lessons.id'), nullable=False, index=True)
+    type = Column(String(20), nullable=False)
+    question = Column(Text, nullable=False)
+    content = Column(JSON, nullable=True)
+    points_value = Column(Integer, default=10)
+    order = Column(Integer, nullable=True)
 
-    lesson = db.relationship('Lesson', back_populates='exercises')
-    responses = db.relationship('ExerciseResponse', back_populates='exercise', cascade='all, delete-orphan')
+    # Relationships
+    lesson = relationship("Lesson", back_populates="exercises")
+    responses = relationship("ExerciseResponse", back_populates="exercise", cascade="all, delete-orphan")
 
-    def __repr__(self):
-        return f'<Exercise {self.id} - {self.type}>'
-
-# Progress Models
-class UserProgress(db.Model):
+class UserProgress(Base):
     __tablename__ = 'user_progress'
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    lesson_id = db.Column(db.Integer, db.ForeignKey('lessons.id'), nullable=False)
-    status = db.Column(db.String(20), default='in_progress')  # not_started, in_progress, completed
-    progress_percentage = db.Column(db.Float, default=0.0)
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
-    completed_at = db.Column(db.DateTime)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    lesson_id = Column(Integer, ForeignKey('lessons.id'), nullable=False, index=True)
+    status = Column(String(20), default='in_progress')
+    progress_percentage = Column(Float, default=0.0)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
 
-    user = db.relationship('User', back_populates='progress')
-    lesson = db.relationship('Lesson', back_populates='progress')
+    # Relationships
+    user = relationship("User", back_populates="progress")
+    lesson = relationship("Lesson", back_populates="progress")
 
-    def __repr__(self):
-        return f'<UserProgress user_id={self.user_id} lesson_id={self.lesson_id}>'
-
-class ExerciseResponse(db.Model):
+class ExerciseResponse(Base):
     __tablename__ = 'exercise_responses'
 
-    id = db.Column(db.Integer, primary_key=True)
-    exercise_id = db.Column(db.Integer, db.ForeignKey('exercises.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    answer = db.Column(db.JSON)  # User's response
-    is_correct = db.Column(db.Boolean)
-    time_spent = db.Column(db.Integer)  # in seconds
-    points_earned = db.Column(db.Integer, default=0)
-    answered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    exercise_id = Column(Integer, ForeignKey('exercises.id'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    answer = Column(JSON, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
+    time_spent = Column(Integer, default=0)
+    points_earned = Column(Integer, default=0)
+    answered_at = Column(DateTime, default=datetime.utcnow)
 
-    exercise = db.relationship('Exercise', back_populates='responses')
+    # Relationships
+    exercise = relationship("Exercise", back_populates="responses")
+    user = relationship("User", back_populates="exercise_responses")
 
-    def __repr__(self):
-        return f'<ExerciseResponse exercise_id={self.exercise_id} correct={self.is_correct}>'
-
-# Reward Models
-class Achievement(db.Model):
+class Achievement(Base):
     __tablename__ = 'achievements'
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text)
-    badge_icon = db.Column(db.String(200))  # URL or identifier
-    condition_type = db.Column(db.String(50))  # 'streak', 'points', 'lessons_completed', etc.
-    condition_value = db.Column(db.Integer)  # e.g., 7 days for streak
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    badge_icon = Column(String(200), nullable=True)
+    condition_type = Column(String(50), nullable=False)
+    condition_value = Column(Integer, nullable=False)
 
-    users = db.relationship('User', secondary='user_achievements', back_populates='achievements')
+    # Relationships
+    users = relationship("User", secondary=user_achievements, back_populates="achievements")
 
-    def __repr__(self):
-        return f'<Achievement {self.name}>'
-
-class UserAchievement(db.Model):
-    __tablename__ = 'user_achievements'
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    achievement_id = db.Column(db.Integer, db.ForeignKey('achievements.id'), nullable=False)
-    unlocked_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def __repr__(self):
-        return f'<UserAchievement user_id={self.user_id} achievement_id={self.achievement_id}>'
-
-class Reward(db.Model):
+class Reward(Base):
     __tablename__ = 'rewards'
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    reward_type = db.Column(db.String(50))  # 'points', 'badge', 'level_up', etc.
-    amount = db.Column(db.Integer)  # Points amount
-    reason = db.Column(db.String(200))  # Why the reward was given
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    reward_type = Column(String(50), nullable=False)
+    amount = Column(Integer, nullable=True)
+    reason = Column(String(200), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    def __repr__(self):
-        return f'<Reward {self.reward_type} user_id={self.user_id}>'
+    # Relationships
+    user = relationship("User", back_populates="rewards")
+
+# ==================== Pydantic Schemas ====================
+
+class UserRegister(BaseModel):
+    username: str = Field(..., min_length=3, max_length=80)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    age: Optional[int] = None
+    native_language: Optional[str] = None
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    age: Optional[int] = None
+    native_language: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserStatsResponse(BaseModel):
+    id: int
+    user_id: int
+    total_points: int
+    level: int
+    streak_days: int
+    accuracy_rate: float
+    total_lessons_completed: int
+    current_difficulty: str
+    last_activity: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class UserProfileResponse(BaseModel):
+    user: UserResponse
+    stats: Optional[UserStatsResponse] = None
+
+class LessonResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    difficulty: str
+    category: Optional[str] = None
+    estimated_duration: Optional[int] = None
+    exercise_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+class ExerciseResponse(BaseModel):
+    id: int
+    lesson_id: int
+    type: str
+    question: str
+    content: Optional[dict] = None
+    points_value: int
+    order: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class ExerciseSubmit(BaseModel):
+    answer: str | dict
+    time_spent: Optional[int] = None
+
+class UserProgressResponse(BaseModel):
+    lesson_id: int
+    lesson_title: Optional[str] = None
+    status: str
+    progress_percentage: float
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class UserProgressDetailResponse(BaseModel):
+    stats: UserStatsResponse
+    progress: List[UserProgressResponse] = []
+
+class AchievementResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    badge_icon: Optional[str] = None
+    unlocked_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class LeaderboardEntry(BaseModel):
+    rank: int
+    user_id: int
+    username: str
+    points: int
+    level: int
+    accuracy_rate: float
+
+class RewardResponse(BaseModel):
+    id: int
+    reward_type: str
+    amount: Optional[int] = None
+    reason: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
