@@ -49,8 +49,11 @@ class User(Base):
     stats = relationship("UserStats", back_populates="user", uselist=False, cascade="all, delete-orphan")
     progress = relationship("UserProgress", back_populates="user", cascade="all, delete-orphan")
     achievements = relationship("Achievement", secondary=user_achievements, back_populates="users")
-    exercise_responses = relationship("ExerciseResponse", back_populates="user", cascade="all, delete-orphan")
+    responses = relationship("ExerciseResponse", back_populates="user", cascade="all, delete-orphan")
     rewards = relationship("Reward", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f'<User {self.username}>'
 
 class UserStats(Base):
     __tablename__ = 'user_stats'
@@ -64,39 +67,49 @@ class UserStats(Base):
     total_lessons_completed = Column(Integer, default=0)
     current_difficulty = Column(String(20), default=DifficultyLevel.BEGINNER.value)
     accuracy_rate = Column(Float, default=0.0)
-
-    # Relationships
     user = relationship("User", back_populates="stats")
+
+    def __repr__(self):
+        return f'<UserStats user_id={self.user_id}>'
+
 
 class Lesson(Base):
     __tablename__ = 'lessons'
 
     id = Column(Integer, primary_key=True)
-    title = Column(String(200), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    difficulty = Column(String(20), default=DifficultyLevel.BEGINNER.value, index=True)
-    category = Column(String(100), nullable=True, index=True)
-    estimated_duration = Column(Integer, nullable=True)
+    difficulty = Column(String(20), nullable=False)
+    category = Column(String(100), nullable=True)
+    estimated_duration = Column(Integer, nullable=True)  # in minutes
+    order = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships
     exercises = relationship("Exercise", back_populates="lesson", cascade="all, delete-orphan")
     progress = relationship("UserProgress", back_populates="lesson", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f'<Lesson {self.title}>'
+
 
 class Exercise(Base):
     __tablename__ = 'exercises'
 
     id = Column(Integer, primary_key=True)
     lesson_id = Column(Integer, ForeignKey('lessons.id'), nullable=False, index=True)
-    type = Column(String(20), nullable=False)
+    type = Column(String(50), nullable=False)
     question = Column(Text, nullable=False)
-    content = Column(JSON, nullable=True)
+    content = Column(JSON, nullable=True)  # Store options, hints, etc.
     points_value = Column(Integer, default=10)
     order = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships
     lesson = relationship("Lesson", back_populates="exercises")
     responses = relationship("ExerciseResponse", back_populates="exercise", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f'<Exercise {self.id} lesson_id={self.lesson_id}>'
+
 
 class UserProgress(Base):
     __tablename__ = 'user_progress'
@@ -104,10 +117,13 @@ class UserProgress(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
     lesson_id = Column(Integer, ForeignKey('lessons.id'), nullable=False, index=True)
-    status = Column(String(20), default='in_progress')
+    status = Column(String(50), default='not_started')  # not_started, in_progress, completed
     progress_percentage = Column(Float, default=0.0)
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="progress")
+    lesson = relationship("Lesson", back_populates="progress")
 
     # Relationships
     user = relationship("User", back_populates="progress")
@@ -119,11 +135,15 @@ class ExerciseResponse(Base):
     id = Column(Integer, primary_key=True)
     exercise_id = Column(Integer, ForeignKey('exercises.id'), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
-    answer = Column(JSON, nullable=True)
+    answer = Column(JSON, nullable=True)  # User's response
     is_correct = Column(Boolean, nullable=True)
-    time_spent = Column(Integer, default=0)
+    time_spent = Column(Integer, nullable=True)  # in seconds
     points_earned = Column(Integer, default=0)
     answered_at = Column(DateTime, default=datetime.utcnow)
+
+    exercise = relationship("Exercise", back_populates="responses")
+    user = relationship("User", back_populates="responses")
+
 
     # Relationships
     exercise = relationship("Exercise", back_populates="responses")
@@ -136,21 +156,27 @@ class Achievement(Base):
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     badge_icon = Column(String(200), nullable=True)
-    condition_type = Column(String(50), nullable=False)
-    condition_value = Column(Integer, nullable=False)
+    condition_type = Column(String(50), nullable=True)  # 'streak', 'points', 'lessons_completed'
+    condition_value = Column(Integer, nullable=True)
 
-    # Relationships
     users = relationship("User", secondary=user_achievements, back_populates="achievements")
+
+    def __repr__(self):
+        return f'<Achievement {self.name}>'
+
 
 class Reward(Base):
     __tablename__ = 'rewards'
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
-    reward_type = Column(String(50), nullable=False)
+    reward_type = Column(String(50), nullable=False)  # 'points', 'badge', 'level_up'
     amount = Column(Integer, nullable=True)
     reason = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="rewards")
+
 
     # Relationships
     user = relationship("User", back_populates="rewards")
@@ -264,6 +290,91 @@ class RewardResponse(BaseModel):
     amount: Optional[int] = None
     reason: Optional[str] = None
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# ==================== Pydantic Models (for request/response validation) ====================
+
+class UserRegister(BaseModel):
+    username: str = Field(..., min_length=3, max_length=80)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    age: Optional[int] = None
+    native_language: Optional[str] = "unknown"
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    age: Optional[int] = None
+    native_language: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserStatsResponse(BaseModel):
+    id: int
+    user_id: int
+    total_points: int
+    level: int
+    streak_days: int
+    total_lessons_completed: int
+    current_difficulty: str
+    accuracy_rate: float
+    last_activity: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class UserProfileResponse(BaseModel):
+    user: UserResponse
+    stats: Optional[UserStatsResponse] = None
+
+class LessonResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    difficulty: str
+    category: Optional[str] = None
+    estimated_duration: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class ExerciseDetailResponse(BaseModel):
+    id: int
+    type: str
+    question: str
+    content: Optional[dict] = None
+    points_value: int
+    order: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class UserProgressResponse(BaseModel):
+    id: int
+    user_id: int
+    lesson_id: int
+    status: str
+    progress_percentage: float
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class AchievementResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    badge_icon: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -13,3 +13,17 @@ dependencies = [
     "email-validator==2.1.0",
     "python-dotenv==1.0.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "black==24.1.1",
+    "ruff==0.2.2",
+    "pyright==1.1.347",
+    "pytest==7.4.4",
+    "pytest-asyncio==0.23.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
