@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+type SpeechPlaybackMode = 'normal' | 'slow';
+
 interface SpeakOptions {
+  mode?: SpeechPlaybackMode;
   rate?: number;
 }
 
@@ -11,6 +14,11 @@ interface SpeechSynthesisHookResult {
   speak: (text: string, options?: SpeakOptions) => boolean;
   stop: () => void;
 }
+
+const DEFAULT_RATE_BY_MODE: Record<SpeechPlaybackMode, number> = {
+  normal: 0.95,
+  slow: 0.55,
+};
 
 function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
   if (!voices.length) return null;
@@ -25,8 +33,28 @@ function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null 
 }
 
 function clampRate(rate: number | undefined): number {
-  if (typeof rate !== 'number' || Number.isNaN(rate)) return 0.9;
-  return Math.min(1.2, Math.max(0.5, rate));
+  if (typeof rate !== 'number' || Number.isNaN(rate)) return DEFAULT_RATE_BY_MODE.normal;
+  return Math.min(1.2, Math.max(0.45, rate));
+}
+
+function buildUtteranceText(text: string, mode: SpeechPlaybackMode): string {
+  const trimmedText = text.trim();
+  if (mode !== 'slow') return trimmedText;
+
+  const slowTokens = trimmedText.match(/[A-Za-z0-9']+|[^\w\s]+/g) ?? [];
+  const rebuilt: string[] = [];
+
+  for (const token of slowTokens) {
+    if (/^[A-Za-z0-9']+$/.test(token)) {
+      rebuilt.push(token);
+    } else if (rebuilt.length > 0) {
+      rebuilt[rebuilt.length - 1] = `${rebuilt[rebuilt.length - 1]}${token}`;
+    } else {
+      rebuilt.push(token);
+    }
+  }
+
+  return rebuilt.join(', ');
 }
 
 export function useSpeechSynthesis(): SpeechSynthesisHookResult {
@@ -79,10 +107,13 @@ export function useSpeechSynthesis(): SpeechSynthesisHookResult {
         return false;
       }
 
+      const mode = options?.mode ?? 'normal';
+      const utteranceText = buildUtteranceText(trimmedText, mode);
+
       setError(null);
       window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(trimmedText);
+      const utterance = new SpeechSynthesisUtterance(utteranceText);
       const selectedVoice = pickVoice(voices);
       if (selectedVoice) {
         utterance.voice = selectedVoice;
@@ -91,8 +122,8 @@ export function useSpeechSynthesis(): SpeechSynthesisHookResult {
         utterance.lang = 'en-AU';
       }
 
-      utterance.rate = clampRate(options?.rate);
-      utterance.pitch = 1;
+      utterance.rate = clampRate(options?.rate ?? DEFAULT_RATE_BY_MODE[mode]);
+      utterance.pitch = mode === 'slow' ? 0.95 : 1;
       utterance.volume = 1;
 
       utterance.onstart = () => {

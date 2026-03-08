@@ -8,7 +8,7 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
 
 type ReadState = 'loading' | 'ready' | 'listening' | 'checking' | 'correct' | 'tryAgain' | 'allDone';
-type ReadAloudMode = 'normal' | 'slow' | null;
+type PlaybackTarget = 'normal' | 'slow' | 'heard' | null;
 
 export default function ReadPage() {
   const [sentence, setSentence] = useState<ReadingSentence | null>(null);
@@ -19,7 +19,7 @@ export default function ReadPage() {
   const [isPreparingMic, setIsPreparingMic] = useState(false);
   const [showDeviceHelp, setShowDeviceHelp] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
-  const [readAloudMode, setReadAloudMode] = useState<ReadAloudMode>(null);
+  const [playbackTarget, setPlaybackTarget] = useState<PlaybackTarget>(null);
   const navigate = useNavigate();
 
   const userId = localStorage.getItem('userId');
@@ -126,12 +126,12 @@ export default function ReadPage() {
 
   useEffect(() => {
     stopReadingAloud();
-    setReadAloudMode(null);
+    setPlaybackTarget(null);
   }, [sentence?.id, stopReadingAloud]);
 
   useEffect(() => {
     if (!isSpeaking) {
-      setReadAloudMode(null);
+      setPlaybackTarget(null);
     }
   }, [isSpeaking]);
 
@@ -146,7 +146,7 @@ export default function ReadPage() {
 
   const handleStartListening = useCallback(async () => {
     stopReadingAloud();
-    setReadAloudMode(null);
+    setPlaybackTarget(null);
     reset();
     setResult(null);
     setIsPreparingMic(true);
@@ -162,7 +162,7 @@ export default function ReadPage() {
 
   const handleNext = () => {
     stopReadingAloud();
-    setReadAloudMode(null);
+    setPlaybackTarget(null);
     reset();
     setResult(null);
     fetchNext();
@@ -170,23 +170,29 @@ export default function ReadPage() {
 
   const handleRetry = () => {
     stopReadingAloud();
-    setReadAloudMode(null);
+    setPlaybackTarget(null);
     reset();
     setResult(null);
     setReadState('ready');
   };
 
-  const handleReadSentence = useCallback((mode: Exclude<ReadAloudMode, null>) => {
+  const handleReadSentence = useCallback((mode: Exclude<PlaybackTarget, 'heard' | null>) => {
     if (!sentence || isListening || readState === 'checking') return;
 
-    const rate = mode === 'slow' ? 0.65 : 0.9;
-    const didSpeak = speakSentence(sentence.text, { rate });
-    setReadAloudMode(didSpeak ? mode : null);
+    const didSpeak = speakSentence(sentence.text, { mode });
+    setPlaybackTarget(didSpeak ? mode : null);
   }, [isListening, readState, sentence, speakSentence]);
+
+  const handlePlayHeardSentence = useCallback(() => {
+    if (!transcript || isListening || readState === 'checking') return;
+
+    const didSpeak = speakSentence(transcript, { mode: 'normal' });
+    setPlaybackTarget(didSpeak ? 'heard' : null);
+  }, [isListening, readState, speakSentence, transcript]);
 
   const handleStopReading = useCallback(() => {
     stopReadingAloud();
-    setReadAloudMode(null);
+    setPlaybackTarget(null);
   }, [stopReadingAloud]);
 
   if (!userId) return null;
@@ -431,6 +437,28 @@ export default function ReadPage() {
                     </p>
                   </div>
                 )}
+
+                {transcript && readState !== 'listening' && readState !== 'checking' && (
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => {
+                        if (playbackTarget === 'heard' && isSpeaking) {
+                          handleStopReading();
+                        } else {
+                          handlePlayHeardSentence();
+                        }
+                      }}
+                      className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition ${
+                        playbackTarget === 'heard' && isSpeaking
+                          ? 'bg-sky-800 hover:bg-sky-900'
+                          : 'bg-sky-600 hover:bg-sky-700'
+                      }`}
+                    >
+                      <span className="text-xl">{playbackTarget === 'heard' && isSpeaking ? '⏹️' : '🗣️'}</span>
+                      <span>{playbackTarget === 'heard' && isSpeaking ? 'Stop my reading' : 'Listen to my reading'}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -552,26 +580,26 @@ export default function ReadPage() {
                     onClick={() => void handleReadSentence('normal')}
                     disabled={!isReadAloudSupported || isListening}
                     className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-indigo-300 ${
-                      readAloudMode === 'normal' && isSpeaking
+                      playbackTarget === 'normal' && isSpeaking
                         ? 'bg-indigo-800 hover:bg-indigo-900'
                         : 'bg-indigo-600 hover:bg-indigo-700'
                     }`}
                   >
                     <span className="text-xl">🔊</span>
-                    <span>{readAloudMode === 'normal' && isSpeaking ? 'Reading...' : 'Read it to me'}</span>
+                    <span>{playbackTarget === 'normal' && isSpeaking ? 'Reading...' : 'Read it to me'}</span>
                   </button>
 
                   <button
                     onClick={() => void handleReadSentence('slow')}
                     disabled={!isReadAloudSupported || isListening}
                     className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-emerald-300 ${
-                      readAloudMode === 'slow' && isSpeaking
+                      playbackTarget === 'slow' && isSpeaking
                         ? 'bg-emerald-800 hover:bg-emerald-900'
                         : 'bg-emerald-600 hover:bg-emerald-700'
                     }`}
                   >
                     <span className="text-xl">🐢</span>
-                    <span>{readAloudMode === 'slow' && isSpeaking ? 'Reading slowly...' : 'Read slowly'}</span>
+                    <span>{playbackTarget === 'slow' && isSpeaking ? 'Reading slowly...' : 'Read slowly'}</span>
                   </button>
 
                   {isSpeaking && (
@@ -587,7 +615,7 @@ export default function ReadPage() {
 
                 <p className="text-center text-sm text-gray-500">
                   {isReadAloudSupported
-                    ? 'Tap a button to hear the sentence before reading it aloud yourself.'
+                    ? 'Tap a button to hear the sentence before reading it aloud yourself. Slow mode adds clearer pauses between words.'
                     : 'Read-aloud is not supported in this browser.'}
                 </p>
               </>
