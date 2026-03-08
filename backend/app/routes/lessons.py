@@ -13,7 +13,7 @@ from app.models import (
 )
 from datetime import datetime, timezone
 
-router = APIRouter(prefix="/lessons", tags=["lessons"])
+router = APIRouter()
 
 
 @router.get("/", response_model=dict)

@@ -1,73 +1,66 @@
-# React + TypeScript + Vite
+# RewardingLearning Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Vite + React + Tailwind frontend for the reading-rewards app.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- HTTPS dev server for iPhone/iPad microphone access
+- `/api` proxy to the FastAPI backend
+- Reading page with speech capture
+- Word-by-word highlight feedback for wrong, missing, and extra words
+- Reward shop and admin screens
 
-## React Compiler
+## Run locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Frontend runs on:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- `https://localhost:3000`
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Backend requirement
+
+The frontend expects the backend on:
+
+- `http://127.0.0.1:8001`
+
+Because Vite proxies `/api` to the backend during development.
+
+## MacBook / iPad / iPhone microphone setup
+
+### On MacBook
+Open:
+
+- `https://localhost:3000`
+
+Allow microphone access when prompted.
+
+### On iPad / iPhone
+1. Make sure the phone/tablet is on the **same Wi‑Fi network** as your Mac.
+2. Start the frontend with `npm run dev`.
+3. Open the **HTTPS** Vite URL from your Mac on the mobile device.
+4. Accept the local certificate warning once if Safari asks.
+5. Allow microphone access in Safari.
+
+Important: iOS Safari usually blocks microphone access on plain HTTP pages, so the HTTPS dev server is required.
+
+## Reading feedback
+
+When speech does not match the sentence:
+
+- **red** = wrong word
+- **amber** = missing word
+- **purple** = extra word
+
+This makes it easier to see exactly what needs another try.
+
+## Build
+
+```bash
+cd frontend
+npm run build
 ```

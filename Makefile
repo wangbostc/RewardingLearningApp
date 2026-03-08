@@ -117,8 +117,9 @@ dev-frontend:
 
 dev:
 	@echo "$(BLUE)▶ Starting development servers...$(NC)"
-	@echo "$(YELLOW)Backend: http://localhost:8001  |  Frontend: http://localhost:3000$(NC)"
+	@echo "$(YELLOW)Backend: http://localhost:8001  |  Frontend: https://localhost:3000$(NC)"
 	@echo "$(YELLOW)API Docs: http://localhost:8001/docs$(NC)"
+	@echo "$(YELLOW)For iPad/iPhone microphone access, open the HTTPS frontend URL from your Mac on the same network.$(NC)"
 	@echo ""
 	@make -j2 dev-backend dev-frontend
 

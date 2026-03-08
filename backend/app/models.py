@@ -6,7 +6,6 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
-    Table,
     JSON,
     Text,
 )
@@ -448,6 +447,11 @@ class SpeechCheckRequest(BaseModel):
     transcript: str
 
 
+class SpeechTokenFeedback(BaseModel):
+    text: str
+    status: str  # correct, wrong, missing, extra, neutral
+
+
 class SpeechCheckResponse(BaseModel):
     is_correct: bool
     similarity: float
@@ -455,6 +459,8 @@ class SpeechCheckResponse(BaseModel):
     expected: str
     heard: str
     message: str
+    expected_tokens: List[SpeechTokenFeedback] = Field(default_factory=list)
+    heard_tokens: List[SpeechTokenFeedback] = Field(default_factory=list)
 
 
 # ==================== Reward Shop Schemas ====================

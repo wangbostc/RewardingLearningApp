@@ -1,4 +1,5 @@
 import re
+from difflib import SequenceMatcher
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -10,7 +11,6 @@ from app.models import (
     Reward,
     SpeechCheckRequest,
     SpeechCheckResponse,
-    ReadingSentenceResponse,
     UserExerciseResponse,
 )
 
@@ -18,6 +18,8 @@ router = APIRouter()
 
 # Minimum similarity threshold (0-100) to consider a reading "correct"
 SIMILARITY_THRESHOLD = 75
+WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9']+")
+DISPLAY_TOKEN_RE = re.compile(r"[A-Za-z0-9']+|[^\w\s]")
 
 
 def normalize_text(text: str) -> str:
@@ -26,6 +28,94 @@ def normalize_text(text: str) -> str:
     text = re.sub(r"[^\w\s]", "", text)  # Remove punctuation
     text = re.sub(r"\s+", " ", text)  # Collapse whitespace
     return text
+
+
+def is_word_token(token: str) -> bool:
+    return bool(WORD_TOKEN_RE.fullmatch(token))
+
+
+def tokenize_for_display(text: str) -> list[str]:
+    return DISPLAY_TOKEN_RE.findall(text)
+
+
+def extract_word_tokens(text: str) -> list[str]:
+    return [token for token in tokenize_for_display(text) if is_word_token(token)]
+
+
+def build_display_feedback(display_tokens: list[str], word_statuses: list[str]) -> list[dict]:
+    feedback = []
+    word_index = 0
+
+    for token in display_tokens:
+        if is_word_token(token):
+            feedback.append({"text": token, "status": word_statuses[word_index]})
+            word_index += 1
+        else:
+            feedback.append({"text": token, "status": "neutral"})
+
+    return feedback
+
+
+def compare_word_feedback(expected_text: str, heard_text: str) -> tuple[list[dict], list[dict]]:
+    """Return display token feedback for expected and heard text."""
+    expected_display = tokenize_for_display(expected_text)
+    heard_display = tokenize_for_display(heard_text)
+    expected_words = [token for token in expected_display if is_word_token(token)]
+    heard_words = [token for token in heard_display if is_word_token(token)]
+
+    expected_statuses = ["wrong"] * len(expected_words)
+    heard_statuses = ["wrong"] * len(heard_words)
+
+    matcher = SequenceMatcher(
+        a=[normalize_text(word) for word in expected_words],
+        b=[normalize_text(word) for word in heard_words],
+        autojunk=False,
+    )
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for index in range(i1, i2):
+                expected_statuses[index] = "correct"
+            for index in range(j1, j2):
+                heard_statuses[index] = "correct"
+        elif tag == "delete":
+            for index in range(i1, i2):
+                expected_statuses[index] = "missing"
+        elif tag == "insert":
+            for index in range(j1, j2):
+                heard_statuses[index] = "extra"
+        elif tag == "replace":
+            for index in range(i1, i2):
+                expected_statuses[index] = "wrong"
+            for index in range(j1, j2):
+                heard_statuses[index] = "wrong"
+
+    return (
+        build_display_feedback(expected_display, expected_statuses),
+        build_display_feedback(heard_display, heard_statuses),
+    )
+
+
+def get_completed_sentence_ids(user_id: int, db: Session) -> set[int]:
+    responses = (
+        db.query(UserExerciseResponse)
+        .filter(
+            UserExerciseResponse.user_id == user_id,
+            UserExerciseResponse.is_correct == True,
+        )
+        .all()
+    )
+
+    completed_ids: set[int] = set()
+    for response in responses:
+        if isinstance(response.answer, dict) and response.answer.get("type") == "reading":
+            sentence_id = response.answer.get("sentence_id")
+            if isinstance(sentence_id, int):
+                completed_ids.add(sentence_id)
+        elif response.exercise_id is not None:
+            completed_ids.add(response.exercise_id)
+
+    return completed_ids
 
 
 @router.post("/check", response_model=SpeechCheckResponse)
@@ -47,20 +137,29 @@ async def check_speech(request: SpeechCheckRequest, db: Session = Depends(get_db
 
     expected = normalize_text(sentence.text)
     heard = normalize_text(request.transcript)
+    expected_tokens, heard_tokens = compare_word_feedback(sentence.text, request.transcript)
 
     # Use token_sort_ratio for word-order-tolerant matching
     similarity = fuzz.token_sort_ratio(expected, heard)
 
     is_correct = similarity >= SIMILARITY_THRESHOLD
-    points_earned = sentence.points_value if is_correct else 0
+    existing_success = (
+        db.query(UserExerciseResponse)
+        .filter(
+            UserExerciseResponse.user_id == request.user_id,
+            UserExerciseResponse.exercise_id == request.sentence_id,
+            UserExerciseResponse.is_correct == True,
+        )
+        .first()
+    )
+    points_earned = sentence.points_value if is_correct and not existing_success else 0
 
-    # Update user stats if correct
-    if is_correct:
+    # Update user stats only once per sentence
+    if points_earned > 0:
         stats = db.query(UserStats).filter(UserStats.user_id == request.user_id).first()
         if stats:
             stats.total_points += points_earned
 
-            # Create reward log entry
             reward = Reward(
                 user_id=request.user_id,
                 reward_type="points",
@@ -77,12 +176,14 @@ async def check_speech(request: SpeechCheckRequest, db: Session = Depends(get_db
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
 
-    if is_correct:
+    if is_correct and existing_success:
+        message = "You got it right again! Let's move to the next sentence. ✨"
+    elif is_correct:
         message = "Great job! You read it correctly! 🎉"
     elif similarity >= 50:
-        message = "Almost there! Try reading it one more time. 💪"
+        message = "Almost there! The highlighted words need another try. 💪"
     else:
-        message = "Let's try again! Listen carefully to each word. 🔄"
+        message = "Let's try again! The highlighted words are the ones to fix. 🔄"
 
     return SpeechCheckResponse(
         is_correct=is_correct,
@@ -91,6 +192,8 @@ async def check_speech(request: SpeechCheckRequest, db: Session = Depends(get_db
         expected=sentence.text,
         heard=request.transcript,
         message=message,
+        expected_tokens=expected_tokens,
+        heard_tokens=heard_tokens,
     )
 
 
@@ -125,19 +228,8 @@ async def get_next_sentence(user_id: int, db: Session = Depends(get_db)):
     Get the next unread sentence for the user.
     Returns sentences they haven't successfully read yet.
     """
-    # Get IDs of sentences the user has already read correctly
-    # We store successful reads as exercise responses with is_correct=True
-    completed_ids = (
-        db.query(UserExerciseResponse.exercise_id)
-        .filter(
-            UserExerciseResponse.user_id == user_id,
-            UserExerciseResponse.is_correct == True,
-        )
-        .all()
-    )
-    completed_set = {row[0] for row in completed_ids}
+    completed_set = get_completed_sentence_ids(user_id, db)
 
-    # Get all sentences ordered by difficulty then order
     all_sentences = (
         db.query(ReadingSentence)
         .order_by(
@@ -146,7 +238,6 @@ async def get_next_sentence(user_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
-    # Find the first sentence not yet completed
     next_sentence = None
     total = len(all_sentences)
     completed_count = 0
@@ -182,13 +273,24 @@ async def record_reading_success(
     user_id: int, sentence_id: int, db: Session = Depends(get_db)
 ):
     """Record that a user successfully read a sentence (uses exercise_responses table)."""
-    # Store as an exercise response to track completion
+    existing = (
+        db.query(UserExerciseResponse)
+        .filter(
+            UserExerciseResponse.user_id == user_id,
+            UserExerciseResponse.exercise_id == sentence_id,
+            UserExerciseResponse.is_correct == True,
+        )
+        .first()
+    )
+    if existing:
+        return {"message": "Reading success already recorded"}
+
     response = UserExerciseResponse(
-        exercise_id=sentence_id,  # Reusing this field for sentence_id tracking
+        exercise_id=sentence_id,
         user_id=user_id,
         answer={"type": "reading", "sentence_id": sentence_id},
         is_correct=True,
-        points_earned=0,  # Points already awarded in /check
+        points_earned=0,
     )
     db.add(response)
 

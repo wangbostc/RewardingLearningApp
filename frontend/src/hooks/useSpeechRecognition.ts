@@ -1,53 +1,144 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
+
+type MicrophonePermissionState = 'unknown' | 'granted' | 'denied';
 
 interface SpeechRecognitionHookResult {
   transcript: string;
   isListening: boolean;
   error: string | null;
-  start: () => void;
+  start: () => Promise<boolean>;
   stop: () => void;
   reset: () => void;
   isSupported: boolean;
+  isSecureOrigin: boolean;
+  permissionState: MicrophonePermissionState;
+  helpText: string | null;
 }
 
-// Use `any` for the recognition instance to avoid Web Speech API type issues
-// across different browsers and TypeScript configs
 type SpeechRecognitionInstance = any;
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+    SpeechRecognition?: new () => SpeechRecognitionInstance;
+  }
+}
 
 function getSpeechRecognitionClass(): (new () => SpeechRecognitionInstance) | null {
   if (typeof window === 'undefined') return null;
-  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function isSecureOrigin(): boolean {
+  if (typeof window === 'undefined') return true;
+  const localhostHosts = new Set(['localhost', '127.0.0.1']);
+  return window.isSecureContext || localhostHosts.has(window.location.hostname);
+}
+
+function buildHelpText(isSupported: boolean, secureOrigin: boolean) {
+  if (!isSupported) {
+    return 'Use Safari on iPhone/iPad or Safari/Chrome on Mac for speech recognition.';
+  }
+
+  if (!secureOrigin) {
+    return 'Microphone access on iPhone/iPad needs HTTPS (or localhost on the same device). Open the app on a secure URL.';
+  }
+
+  return 'Tap the microphone, allow access, and read the sentence out loud.';
 }
 
 /**
  * Speech recognition hook.
  *
- * Uses Web Speech API (works on iPad Safari / Chrome with network).
- * The backend does the fuzzy matching via rapidfuzz, so even imperfect
- * transcripts get fair scoring.
+ * Uses Web Speech API plus a getUserMedia permission warm-up so it behaves
+ * more reliably across macOS Safari/Chrome and iOS Safari.
  */
 export function useSpeechRecognition(): SpeechRecognitionHookResult {
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [permissionState, setPermissionState] = useState<MicrophonePermissionState>('unknown');
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const transcriptRef = useRef('');
+  const isStartingRef = useRef(false);
+  const manualStopRef = useRef(false);
+
+  const updateTranscript = useCallback((value: string) => {
+    transcriptRef.current = value;
+    setTranscript(value);
+  }, []);
 
   const SpeechRecognitionClass = getSpeechRecognitionClass();
   const isSupported = !!SpeechRecognitionClass;
+  const secureOrigin = isSecureOrigin();
+  const helpText = useMemo(
+    () => buildHelpText(isSupported, secureOrigin),
+    [isSupported, secureOrigin]
+  );
 
-  const start = useCallback(() => {
-    if (!SpeechRecognitionClass) {
-      setError('Speech recognition is not supported in this browser.');
-      return;
+  const warmUpMicrophone = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return true;
     }
 
-    // Stop any existing recognition
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      stream.getTracks().forEach((track) => track.stop());
+      setPermissionState('granted');
+      return true;
+    } catch (caughtError: unknown) {
+      setPermissionState('denied');
+      const micError = caughtError as { name?: string } | undefined;
+
+      if (!secureOrigin) {
+        setError(
+          'Microphone access needs HTTPS on iPhone/iPad. Open the app from a secure address.'
+        );
+      } else if (micError?.name === 'NotAllowedError' || micError?.name === 'PermissionDeniedError') {
+        setError('Microphone access denied. Please allow microphone access and try again.');
+      } else {
+        setError('Could not access the microphone. Please check microphone permissions.');
+      }
+
+      return false;
+    }
+  }, [secureOrigin]);
+
+  const start = useCallback(async () => {
+    if (!SpeechRecognitionClass) {
+      setError('Speech recognition is not supported in this browser.');
+      return false;
+    }
+
+    if (isStartingRef.current || isListening) {
+      return false;
+    }
+
+    isStartingRef.current = true;
+    manualStopRef.current = false;
+    setError(null);
+    updateTranscript('');
+
+    const microphoneReady = await warmUpMicrophone();
+    if (!microphoneReady) {
+      isStartingRef.current = false;
+      setIsListening(false);
+      return false;
+    }
+
     if (recognitionRef.current) {
       recognitionRef.current.abort();
+      recognitionRef.current = null;
     }
 
     const recognition = new SpeechRecognitionClass();
-    recognition.lang = 'en-AU'; // Australian English
+    recognition.lang = 'en-AU';
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
@@ -55,67 +146,84 @@ export function useSpeechRecognition(): SpeechRecognitionHookResult {
     recognition.onstart = () => {
       setIsListening(true);
       setError(null);
-      setTranscript('');
+      isStartingRef.current = false;
     };
 
     recognition.onresult = (event: any) => {
       let finalTranscript = '';
       let interimTranscript = '';
 
-      for (let i = 0; i < event.results.length; i++) {
+      for (let i = event.resultIndex ?? 0; i < event.results.length; i += 1) {
         const result = event.results[i];
         if (result.isFinal) {
-          finalTranscript += result[0].transcript;
+          finalTranscript += `${result[0].transcript} `;
         } else {
-          interimTranscript += result[0].transcript;
+          interimTranscript += `${result[0].transcript} `;
         }
       }
 
-      setTranscript(finalTranscript || interimTranscript);
+      updateTranscript((finalTranscript || interimTranscript).trim());
     };
 
     recognition.onerror = (event: any) => {
       const errorCode = event.error;
       if (errorCode === 'no-speech') {
-        setError("I didn't hear anything. Try again!");
+        setError("I didn't hear anything. Hold the iPad/iPhone a bit closer and try again.");
       } else if (errorCode === 'audio-capture') {
-        setError('No microphone found. Please check your device.');
+        setError('No microphone was detected. Please check your device microphone.');
       } else if (errorCode === 'not-allowed') {
-        setError('Microphone access denied. Please allow microphone access.');
+        setPermissionState('denied');
+        setError('Microphone access denied. Please allow microphone access in browser settings.');
+      } else if (errorCode === 'network') {
+        setError('Speech recognition needs a browser-supported speech service. On iPhone/iPad, open the secure HTTPS address of this app.');
       } else {
-        setError(`Oops! Something went wrong: ${errorCode}`);
+        setError(`Speech recognition stopped: ${errorCode}`);
       }
+      isStartingRef.current = false;
       setIsListening(false);
     };
 
     recognition.onend = () => {
+      isStartingRef.current = false;
       setIsListening(false);
+      if (!manualStopRef.current && !transcriptRef.current.trim()) {
+        setError((currentError) => currentError ?? "I didn't catch any words. Try once more.");
+      }
+      recognitionRef.current = null;
     };
 
     recognitionRef.current = recognition;
 
     try {
       recognition.start();
+      return true;
     } catch {
-      setError('Failed to start speech recognition.');
+      isStartingRef.current = false;
+      setError('Failed to start speech recognition. Try tapping the microphone again.');
       setIsListening(false);
+      recognitionRef.current = null;
+      return false;
     }
-  }, [SpeechRecognitionClass]);
+  }, [SpeechRecognitionClass, isListening, updateTranscript, warmUpMicrophone]);
 
   const stop = useCallback(() => {
+    manualStopRef.current = true;
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
   }, []);
 
   const reset = useCallback(() => {
-    setTranscript('');
+    manualStopRef.current = true;
+    updateTranscript('');
     setError(null);
     if (recognitionRef.current) {
       recognitionRef.current.abort();
+      recognitionRef.current = null;
     }
+    isStartingRef.current = false;
     setIsListening(false);
-  }, []);
+  }, [updateTranscript]);
 
   return {
     transcript,
@@ -125,5 +233,8 @@ export function useSpeechRecognition(): SpeechRecognitionHookResult {
     stop,
     reset,
     isSupported,
+    isSecureOrigin: secureOrigin,
+    permissionState,
+    helpText,
   };
 }

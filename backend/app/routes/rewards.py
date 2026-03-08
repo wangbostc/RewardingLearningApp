@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app import get_db
 from app.models import Achievement, UserAchievement, UserStats, Reward
 
-router = APIRouter(prefix="/rewards", tags=["rewards"])
+router = APIRouter()
 
 
 @router.get("/achievements/{user_id}", response_model=dict)

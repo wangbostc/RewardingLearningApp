@@ -5,7 +5,7 @@ from app import get_db
 from app.models import UserExerciseResponse, Exercise, UserProgress, UserStats
 from datetime import datetime, timezone
 
-router = APIRouter(prefix="/progress", tags=["progress"])
+router = APIRouter()
 
 
 class ExerciseSubmission(BaseModel):

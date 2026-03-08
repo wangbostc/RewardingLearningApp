@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 class ApiClient {
   private baseUrl: string;
@@ -60,11 +60,11 @@ class ApiClient {
     if (difficulty) params.append('difficulty', difficulty);
     if (category) params.append('category', category);
     const query = params.toString() ? `?${params.toString()}` : '';
-    return this.request<{ lessons: Lesson[] }>(`/lessons/lessons/${query}`);
+    return this.request<{ lessons: Lesson[] }>(`/lessons/${query}`);
   }
 
   async getLesson(lessonId: number) {
-    return this.request(`/lessons/lessons/${lessonId}`);
+    return this.request(`/lessons/${lessonId}`);
   }
 
   // Speech / Reading endpoints
@@ -97,7 +97,7 @@ class ApiClient {
 
   // Progress endpoints
   async getUserProgress(userId: number) {
-    return this.request<UserProgressData>(`/progress/progress/user/${userId}`);
+    return this.request<UserProgressData>(`/progress/user/${userId}`);
   }
 
   // Shop endpoints
@@ -120,11 +120,11 @@ class ApiClient {
 
   // Rewards endpoints
   async getUserAchievements(userId: number) {
-    return this.request(`/rewards/rewards/achievements/${userId}`);
+    return this.request(`/rewards/achievements/${userId}`);
   }
 
   async checkAchievements(userId: number) {
-    return this.request(`/rewards/rewards/check-achievements/${userId}`, {
+    return this.request(`/rewards/check-achievements/${userId}`, {
       method: 'POST',
     });
   }
@@ -218,6 +218,13 @@ export interface ReadingSentence {
   lesson_id?: number;
 }
 
+export type SpeechTokenStatus = 'correct' | 'wrong' | 'missing' | 'extra' | 'neutral';
+
+export interface SpeechTokenFeedback {
+  text: string;
+  status: SpeechTokenStatus;
+}
+
 export interface SpeechCheckResult {
   is_correct: boolean;
   similarity: number;
@@ -225,6 +232,8 @@ export interface SpeechCheckResult {
   expected: string;
   heard: string;
   message: string;
+  expected_tokens: SpeechTokenFeedback[];
+  heard_tokens: SpeechTokenFeedback[];
 }
 
 export interface NextSentenceResult {
@@ -295,5 +304,4 @@ export interface AdminSentence {
 
 const apiClient = new ApiClient();
 export default apiClient;
-
 
