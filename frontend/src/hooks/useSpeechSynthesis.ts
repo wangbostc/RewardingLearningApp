@@ -37,26 +37,6 @@ function clampRate(rate: number | undefined): number {
   return Math.min(1.2, Math.max(0.45, rate));
 }
 
-function buildUtteranceText(text: string, mode: SpeechPlaybackMode): string {
-  const trimmedText = text.trim();
-  if (mode !== 'slow') return trimmedText;
-
-  const slowTokens = trimmedText.match(/[A-Za-z0-9']+|[^\w\s]+/g) ?? [];
-  const rebuilt: string[] = [];
-
-  for (const token of slowTokens) {
-    if (/^[A-Za-z0-9']+$/.test(token)) {
-      rebuilt.push(token);
-    } else if (rebuilt.length > 0) {
-      rebuilt[rebuilt.length - 1] = `${rebuilt[rebuilt.length - 1]}${token}`;
-    } else {
-      rebuilt.push(token);
-    }
-  }
-
-  return rebuilt.join(', ');
-}
-
 export function useSpeechSynthesis(): SpeechSynthesisHookResult {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -108,12 +88,11 @@ export function useSpeechSynthesis(): SpeechSynthesisHookResult {
       }
 
       const mode = options?.mode ?? 'normal';
-      const utteranceText = buildUtteranceText(trimmedText, mode);
 
       setError(null);
       window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(utteranceText);
+      const utterance = new SpeechSynthesisUtterance(trimmedText);
       const selectedVoice = pickVoice(voices);
       if (selectedVoice) {
         utterance.voice = selectedVoice;
@@ -123,7 +102,7 @@ export function useSpeechSynthesis(): SpeechSynthesisHookResult {
       }
 
       utterance.rate = clampRate(options?.rate ?? DEFAULT_RATE_BY_MODE[mode]);
-      utterance.pitch = mode === 'slow' ? 0.95 : 1;
+      utterance.pitch = 1;
       utterance.volume = 1;
 
       utterance.onstart = () => {
@@ -157,4 +136,3 @@ export function useSpeechSynthesis(): SpeechSynthesisHookResult {
     stop,
   };
 }
-

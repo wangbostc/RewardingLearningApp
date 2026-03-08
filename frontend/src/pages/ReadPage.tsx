@@ -615,7 +615,7 @@ export default function ReadPage() {
 
                 <p className="text-center text-sm text-gray-500">
                   {isReadAloudSupported
-                    ? 'Tap a button to hear the sentence before reading it aloud yourself. Slow mode adds clearer pauses between words.'
+                    ? 'Tap a button to hear the sentence before reading it aloud yourself.'
                     : 'Read-aloud is not supported in this browser.'}
                 </p>
               </>
