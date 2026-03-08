@@ -16,8 +16,6 @@ from app.models import (
 
 router = APIRouter()
 
-# Minimum similarity threshold (0-100) to consider a reading "correct"
-SIMILARITY_THRESHOLD = 75
 WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9']+")
 DISPLAY_TOKEN_RE = re.compile(r"[A-Za-z0-9']+|[^\w\s]")
 
@@ -40,6 +38,26 @@ def tokenize_for_display(text: str) -> list[str]:
 
 def extract_word_tokens(text: str) -> list[str]:
     return [token for token in tokenize_for_display(text) if is_word_token(token)]
+
+
+def normalize_word_tokens(text: str) -> list[str]:
+    return [normalize_text(token) for token in extract_word_tokens(text)]
+
+
+def is_exact_reading_match(expected_text: str, heard_text: str) -> bool:
+    return normalize_word_tokens(expected_text) == normalize_word_tokens(heard_text)
+
+
+def calculate_reading_similarity(expected_text: str, heard_text: str) -> float:
+    expected = normalize_text(expected_text)
+    heard = normalize_text(heard_text)
+
+    if not expected and not heard:
+        return 100.0
+    if not expected or not heard:
+        return 0.0
+
+    return float(fuzz.ratio(expected, heard))
 
 
 def build_display_feedback(display_tokens: list[str], word_statuses: list[str]) -> list[dict]:
@@ -122,7 +140,7 @@ def get_completed_sentence_ids(user_id: int, db: Session) -> set[int]:
 async def check_speech(request: SpeechCheckRequest, db: Session = Depends(get_db)):
     """
     Compare a speech transcript against the expected sentence.
-    Awards points if similarity >= threshold.
+    Awards points only when the normalized words match exactly.
     """
     sentence = (
         db.query(ReadingSentence)
@@ -135,14 +153,9 @@ async def check_speech(request: SpeechCheckRequest, db: Session = Depends(get_db
             status_code=status.HTTP_404_NOT_FOUND, detail="Sentence not found"
         )
 
-    expected = normalize_text(sentence.text)
-    heard = normalize_text(request.transcript)
     expected_tokens, heard_tokens = compare_word_feedback(sentence.text, request.transcript)
-
-    # Use token_sort_ratio for word-order-tolerant matching
-    similarity = fuzz.token_sort_ratio(expected, heard)
-
-    is_correct = similarity >= SIMILARITY_THRESHOLD
+    similarity = calculate_reading_similarity(sentence.text, request.transcript)
+    is_correct = is_exact_reading_match(sentence.text, request.transcript)
     existing_success = (
         db.query(UserExerciseResponse)
         .filter(
@@ -179,11 +192,11 @@ async def check_speech(request: SpeechCheckRequest, db: Session = Depends(get_db
     if is_correct and existing_success:
         message = "You got it right again! Let's move to the next sentence. ✨"
     elif is_correct:
-        message = "Great job! You read it correctly! 🎉"
+        message = "Great job! You read every word correctly! 🎉"
     elif similarity >= 50:
-        message = "Almost there! The highlighted words need another try. 💪"
+        message = "Almost there! Fix the highlighted word and try again. 💪"
     else:
-        message = "Let's try again! The highlighted words are the ones to fix. 🔄"
+        message = "Let's try again! The highlighted word shows what to fix. 🔄"
 
     return SpeechCheckResponse(
         is_correct=is_correct,

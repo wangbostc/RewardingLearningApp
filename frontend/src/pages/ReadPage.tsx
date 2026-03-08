@@ -5,8 +5,10 @@ import TranscriptDiff from '@/components/TranscriptDiff';
 import apiClient from '@/lib/api-client';
 import type { ReadingSentence, SpeechCheckResult } from '@/lib/api-client';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
 
 type ReadState = 'loading' | 'ready' | 'listening' | 'checking' | 'correct' | 'tryAgain' | 'allDone';
+type ReadAloudMode = 'normal' | 'slow' | null;
 
 export default function ReadPage() {
   const [sentence, setSentence] = useState<ReadingSentence | null>(null);
@@ -17,6 +19,7 @@ export default function ReadPage() {
   const [isPreparingMic, setIsPreparingMic] = useState(false);
   const [showDeviceHelp, setShowDeviceHelp] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [readAloudMode, setReadAloudMode] = useState<ReadAloudMode>(null);
   const navigate = useNavigate();
 
   const userId = localStorage.getItem('userId');
@@ -32,6 +35,13 @@ export default function ReadPage() {
     permissionState,
     helpText,
   } = useSpeechRecognition();
+  const {
+    isSupported: isReadAloudSupported,
+    isSpeaking,
+    error: readAloudError,
+    speak: speakSentence,
+    stop: stopReadingAloud,
+  } = useSpeechSynthesis();
 
   const currentOrigin = useMemo(
     () => (typeof window === 'undefined' ? '' : window.location.origin),
@@ -103,21 +113,40 @@ export default function ReadPage() {
     }
   }, [sentence, userId]);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!userId) {
       navigate('/login');
       return;
     }
-    fetchNext();
+    queueMicrotask(() => {
+      void fetchNext();
+    });
   }, [userId, navigate, fetchNext]);
 
   useEffect(() => {
+    stopReadingAloud();
+    setReadAloudMode(null);
+  }, [sentence?.id, stopReadingAloud]);
+
+  useEffect(() => {
+    if (!isSpeaking) {
+      setReadAloudMode(null);
+    }
+  }, [isSpeaking]);
+
+  useEffect(() => {
     if (!isListening && transcript && readState === 'listening') {
-      handleCheck(transcript);
+      queueMicrotask(() => {
+        void handleCheck(transcript);
+      });
     }
   }, [handleCheck, isListening, readState, transcript]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleStartListening = useCallback(async () => {
+    stopReadingAloud();
+    setReadAloudMode(null);
     reset();
     setResult(null);
     setIsPreparingMic(true);
@@ -125,23 +154,40 @@ export default function ReadPage() {
     const didStart = await start();
     setIsPreparingMic(false);
     setReadState(didStart ? 'listening' : 'ready');
-  }, [reset, start]);
+  }, [reset, start, stopReadingAloud]);
 
   const handleStopListening = () => {
     stop();
   };
 
   const handleNext = () => {
+    stopReadingAloud();
+    setReadAloudMode(null);
     reset();
     setResult(null);
     fetchNext();
   };
 
   const handleRetry = () => {
+    stopReadingAloud();
+    setReadAloudMode(null);
     reset();
     setResult(null);
     setReadState('ready');
   };
+
+  const handleReadSentence = useCallback((mode: Exclude<ReadAloudMode, null>) => {
+    if (!sentence || isListening || readState === 'checking') return;
+
+    const rate = mode === 'slow' ? 0.65 : 0.9;
+    const didSpeak = speakSentence(sentence.text, { rate });
+    setReadAloudMode(didSpeak ? mode : null);
+  }, [isListening, readState, sentence, speakSentence]);
+
+  const handleStopReading = useCallback(() => {
+    stopReadingAloud();
+    setReadAloudMode(null);
+  }, [stopReadingAloud]);
 
   if (!userId) return null;
 
@@ -411,6 +457,12 @@ export default function ReadPage() {
                 <p className="text-red-700">{speechError}</p>
               </div>
             )}
+
+            {readAloudError && (
+              <div className="mt-4 p-4 bg-amber-50 rounded-xl text-center">
+                <p className="text-amber-700">{readAloudError}</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -491,6 +543,54 @@ export default function ReadPage() {
                   Skip →
                 </button>
               </div>
+            )}
+
+            {readState !== 'checking' && (
+              <>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button
+                    onClick={() => void handleReadSentence('normal')}
+                    disabled={!isReadAloudSupported || isListening}
+                    className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-indigo-300 ${
+                      readAloudMode === 'normal' && isSpeaking
+                        ? 'bg-indigo-800 hover:bg-indigo-900'
+                        : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                  >
+                    <span className="text-xl">🔊</span>
+                    <span>{readAloudMode === 'normal' && isSpeaking ? 'Reading...' : 'Read it to me'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => void handleReadSentence('slow')}
+                    disabled={!isReadAloudSupported || isListening}
+                    className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-emerald-300 ${
+                      readAloudMode === 'slow' && isSpeaking
+                        ? 'bg-emerald-800 hover:bg-emerald-900'
+                        : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                  >
+                    <span className="text-xl">🐢</span>
+                    <span>{readAloudMode === 'slow' && isSpeaking ? 'Reading slowly...' : 'Read slowly'}</span>
+                  </button>
+
+                  {isSpeaking && (
+                    <button
+                      onClick={handleStopReading}
+                      className="inline-flex items-center gap-3 rounded-xl bg-slate-600 px-5 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                    >
+                      <span className="text-xl">⏹️</span>
+                      <span>Stop reading</span>
+                    </button>
+                  )}
+                </div>
+
+                <p className="text-center text-sm text-gray-500">
+                  {isReadAloudSupported
+                    ? 'Tap a button to hear the sentence before reading it aloud yourself.'
+                    : 'Read-aloud is not supported in this browser.'}
+                </p>
+              </>
             )}
           </div>
         )}

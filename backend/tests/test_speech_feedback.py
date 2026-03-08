@@ -3,7 +3,12 @@ import sys
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from app.routes.speech import compare_word_feedback, normalize_text
+from app.routes.speech import (
+    calculate_reading_similarity,
+    compare_word_feedback,
+    is_exact_reading_match,
+    normalize_text,
+)
 
 
 def statuses(tokens):
@@ -38,3 +43,21 @@ def test_compare_word_feedback_marks_extra_words():
 
     assert statuses(expected_tokens) == ["correct", "correct", "correct", "correct", "correct"]
     assert statuses(heard_tokens) == ["correct", "correct", "extra", "correct", "correct", "correct"]
+
+
+def test_exact_reading_match_allows_case_and_punctuation_only_differences():
+    assert is_exact_reading_match("The cat sat on the mat.", "the cat sat on the mat") is True
+
+
+def test_exact_reading_match_rejects_wrong_or_missing_words():
+    assert is_exact_reading_match("The cat sat on the mat.", "The dog sat on the mat") is False
+    assert is_exact_reading_match("The cat sat on the mat.", "The cat sat on mat") is False
+
+
+def test_exact_reading_match_rejects_word_order_changes():
+    assert is_exact_reading_match("I can see a cat.", "I can a see cat") is False
+
+
+def test_similarity_is_only_100_for_exact_matches():
+    assert calculate_reading_similarity("I can see a cat.", "I can see a cat") == 100.0
+    assert calculate_reading_similarity("I can see a cat.", "I can see the cat") < 100.0
