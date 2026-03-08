@@ -16,8 +16,8 @@ interface SpeechSynthesisHookResult {
 }
 
 const DEFAULT_RATE_BY_MODE: Record<SpeechPlaybackMode, number> = {
-  normal: 0.95,
-  slow: 0.55,
+  normal: 1.0,
+  slow: 0.3,
 };
 
 function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
@@ -34,7 +34,7 @@ function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null 
 
 function clampRate(rate: number | undefined): number {
   if (typeof rate !== 'number' || Number.isNaN(rate)) return DEFAULT_RATE_BY_MODE.normal;
-  return Math.min(1.2, Math.max(0.45, rate));
+  return Math.min(1.2, Math.max(0.25, rate));
 }
 
 export function useSpeechSynthesis(): SpeechSynthesisHookResult {

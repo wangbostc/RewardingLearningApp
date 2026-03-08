@@ -15,7 +15,42 @@ interface SpeechRecognitionHookResult {
   helpText: string | null;
 }
 
-type SpeechRecognitionInstance = any;
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  0: SpeechRecognitionAlternativeLike;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionResultListLike {
+  length: number;
+  [index: number]: SpeechRecognitionResultLike;
+}
+
+interface SpeechRecognitionEventLike {
+  resultIndex?: number;
+  results: SpeechRecognitionResultListLike;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
 
 declare global {
   interface Window {
@@ -44,7 +79,7 @@ function buildHelpText(isSupported: boolean, secureOrigin: boolean) {
     return 'Microphone access on iPhone/iPad needs HTTPS (or localhost on the same device). Open the app on a secure URL.';
   }
 
-  return 'Tap the microphone, allow access, and read the sentence out loud.';
+  return 'Press and hold the microphone while reading, then release to stop. After that, you can play your recording and check the match.';
 }
 
 /**
@@ -149,7 +184,7 @@ export function useSpeechRecognition(): SpeechRecognitionHookResult {
       isStartingRef.current = false;
     };
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let finalTranscript = '';
       let interimTranscript = '';
 
@@ -165,7 +200,7 @@ export function useSpeechRecognition(): SpeechRecognitionHookResult {
       updateTranscript((finalTranscript || interimTranscript).trim());
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       const errorCode = event.error;
       if (errorCode === 'no-speech') {
         setError("I didn't hear anything. Hold the iPad/iPhone a bit closer and try again.");

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '@/components/Nav';
 import TranscriptDiff from '@/components/TranscriptDiff';
@@ -6,8 +6,9 @@ import apiClient from '@/lib/api-client';
 import type { ReadingSentence, SpeechCheckResult } from '@/lib/api-client';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
+import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 
-type ReadState = 'loading' | 'ready' | 'listening' | 'checking' | 'correct' | 'tryAgain' | 'allDone';
+type ReadState = 'loading' | 'ready' | 'pressing' | 'checking' | 'correct' | 'tryAgain' | 'allDone';
 type PlaybackTarget = 'normal' | 'slow' | 'heard' | null;
 
 export default function ReadPage() {
@@ -17,9 +18,12 @@ export default function ReadPage() {
   const [result, setResult] = useState<SpeechCheckResult | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isPreparingMic, setIsPreparingMic] = useState(false);
+  const [isStoppingListening, setIsStoppingListening] = useState(false);
   const [showDeviceHelp, setShowDeviceHelp] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [playbackTarget, setPlaybackTarget] = useState<PlaybackTarget>(null);
+  const holdShouldStopRef = useRef(false);
+  const isHoldActiveRef = useRef(false);
   const navigate = useNavigate();
 
   const userId = localStorage.getItem('userId');
@@ -42,6 +46,18 @@ export default function ReadPage() {
     speak: speakSentence,
     stop: stopReadingAloud,
   } = useSpeechSynthesis();
+  const {
+    isSupported: isVoiceReplaySupported,
+    isRecording,
+    isPlaying: isPlayingRecording,
+    hasRecording,
+    error: recordingError,
+    start: startRecording,
+    stop: stopRecording,
+    play: playRecording,
+    stopPlayback: stopRecordingPlayback,
+    reset: resetRecording,
+  } = useAudioRecorder();
 
   const currentOrigin = useMemo(
     () => (typeof window === 'undefined' ? '' : window.location.origin),
@@ -92,7 +108,7 @@ export default function ReadPage() {
   }, [userId]);
 
   const handleCheck = useCallback(async (text: string) => {
-    if (!userId || !sentence) return;
+    if (!userId || !sentence || !text.trim()) return;
     setReadState('checking');
 
     try {
@@ -126,76 +142,202 @@ export default function ReadPage() {
 
   useEffect(() => {
     stopReadingAloud();
+    stopRecordingPlayback();
+    resetRecording();
+    holdShouldStopRef.current = false;
+    isHoldActiveRef.current = false;
     setPlaybackTarget(null);
-  }, [sentence?.id, stopReadingAloud]);
+    setIsStoppingListening(false);
+  }, [resetRecording, sentence?.id, stopReadingAloud, stopRecordingPlayback]);
 
   useEffect(() => {
-    if (!isSpeaking) {
+    if (!isSpeaking && !isPlayingRecording) {
       setPlaybackTarget(null);
     }
-  }, [isSpeaking]);
-
-  useEffect(() => {
-    if (!isListening && transcript && readState === 'listening') {
-      queueMicrotask(() => {
-        void handleCheck(transcript);
-      });
-    }
-  }, [handleCheck, isListening, readState, transcript]);
+  }, [isPlayingRecording, isSpeaking]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const handleStartListening = useCallback(async () => {
+  useEffect(() => {
+    if (readState !== 'pressing' || isListening || !isStoppingListening) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const finishHeldReading = async () => {
+      const recordedAudio = await stopRecording();
+      if (cancelled) return;
+
+      holdShouldStopRef.current = false;
+      isHoldActiveRef.current = false;
+      setIsStoppingListening(false);
+
+      if (transcript.trim() || recordedAudio) {
+        setReadState('ready');
+      } else {
+        setReadState('ready');
+      }
+    };
+
+    void finishHeldReading();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isListening, isStoppingListening, readState, stopRecording, transcript]);
+
+  const beginHeldReading = useCallback(async () => {
+    if (!sentence || isPreparingMic || readState === 'checking' || readState === 'allDone') {
+      return;
+    }
+    if (isHoldActiveRef.current || isListening || isRecording) {
+      return;
+    }
+
+    isHoldActiveRef.current = true;
+    holdShouldStopRef.current = false;
+
     stopReadingAloud();
+    stopRecordingPlayback();
+    resetRecording();
     setPlaybackTarget(null);
     reset();
     setResult(null);
     setIsPreparingMic(true);
+    setIsStoppingListening(false);
 
-    const didStart = await start();
+    const recordingStarted = await startRecording();
+    const speechStarted = await start();
+    const didStart = recordingStarted || speechStarted;
+
+    if (!didStart) {
+      isHoldActiveRef.current = false;
+      await stopRecording();
+      resetRecording();
+      setIsPreparingMic(false);
+      setReadState('ready');
+      return;
+    }
+
     setIsPreparingMic(false);
-    setReadState(didStart ? 'listening' : 'ready');
-  }, [reset, start, stopReadingAloud]);
+    setReadState('pressing');
 
-  const handleStopListening = () => {
+    if (holdShouldStopRef.current) {
+      holdShouldStopRef.current = false;
+      stop();
+      setIsStoppingListening(true);
+    }
+  }, [
+    isListening,
+    isPreparingMic,
+    isRecording,
+    readState,
+    reset,
+    resetRecording,
+    sentence,
+    start,
+    startRecording,
+    stop,
+    stopReadingAloud,
+    stopRecording,
+    stopRecordingPlayback,
+  ]);
+
+  const endHeldReading = useCallback(() => {
+    if (isPreparingMic) {
+      holdShouldStopRef.current = true;
+      return;
+    }
+
+    if (!isHoldActiveRef.current && readState !== 'pressing') {
+      return;
+    }
+
+    holdShouldStopRef.current = false;
+    setIsStoppingListening(true);
     stop();
-  };
+  }, [isPreparingMic, readState, stop]);
+
+  const handleMicPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    void beginHeldReading();
+  }, [beginHeldReading]);
+
+  const handleMicPointerUp = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    endHeldReading();
+  }, [endHeldReading]);
+
+  const handleMicPointerCancel = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    endHeldReading();
+  }, [endHeldReading]);
+
+  const handleMicKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+      event.preventDefault();
+      void beginHeldReading();
+    }
+  }, [beginHeldReading]);
+
+  const handleMicKeyUp = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      endHeldReading();
+    }
+  }, [endHeldReading]);
 
   const handleNext = () => {
     stopReadingAloud();
+    stopRecordingPlayback();
+    resetRecording();
+    holdShouldStopRef.current = false;
+    isHoldActiveRef.current = false;
     setPlaybackTarget(null);
+    setIsStoppingListening(false);
     reset();
     setResult(null);
     fetchNext();
   };
 
-  const handleRetry = () => {
-    stopReadingAloud();
-    setPlaybackTarget(null);
-    reset();
-    setResult(null);
-    setReadState('ready');
-  };
-
   const handleReadSentence = useCallback((mode: Exclude<PlaybackTarget, 'heard' | null>) => {
-    if (!sentence || isListening || readState === 'checking') return;
+    if (!sentence || isListening || readState === 'checking' || isPreparingMic || isStoppingListening) return;
 
+    stopRecordingPlayback();
     const didSpeak = speakSentence(sentence.text, { mode });
     setPlaybackTarget(didSpeak ? mode : null);
-  }, [isListening, readState, sentence, speakSentence]);
+  }, [isListening, isPreparingMic, isStoppingListening, readState, sentence, speakSentence, stopRecordingPlayback]);
 
-  const handlePlayHeardSentence = useCallback(() => {
-    if (!transcript || isListening || readState === 'checking') return;
+  const handlePlayHeardSentence = useCallback(async () => {
+    if (!hasRecording || isListening || readState === 'checking' || isPreparingMic || isStoppingListening) return;
 
-    const didSpeak = speakSentence(transcript, { mode: 'normal' });
-    setPlaybackTarget(didSpeak ? 'heard' : null);
-  }, [isListening, readState, speakSentence, transcript]);
-
-  const handleStopReading = useCallback(() => {
     stopReadingAloud();
+    const didPlay = await playRecording();
+    setPlaybackTarget(didPlay ? 'heard' : null);
+  }, [hasRecording, isListening, isPreparingMic, isStoppingListening, playRecording, readState, stopReadingAloud]);
+
+  const handleStopPlayback = useCallback(() => {
+    stopReadingAloud();
+    stopRecordingPlayback();
     setPlaybackTarget(null);
-  }, [stopReadingAloud]);
+  }, [stopReadingAloud, stopRecordingPlayback]);
 
   if (!userId) return null;
+
+  const showRecordedReview = Boolean(transcript.trim() || hasRecording || isListening || isRecording || result);
+  const isHoldBusy = isPreparingMic || isStoppingListening;
+  const isCurrentlyHolding = readState === 'pressing';
+  const canCheckMatch = Boolean(transcript.trim()) && readState !== 'checking' && !isListening && !isHoldBusy;
+  const canPlayRecording = hasRecording && readState !== 'checking' && !isListening && !isHoldBusy;
+  const canStartHoldToRecord = !isHoldBusy && readState !== 'checking' && readState !== 'correct';
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100 relative overflow-hidden">
@@ -407,7 +549,7 @@ export default function ReadPage() {
               </div>
             </div>
 
-            {(transcript || readState === 'listening' || result) && (
+            {(showRecordedReview || result) && (
               <div className="mt-4 space-y-4">
                 {result && !result.is_correct ? (
                   <>
@@ -433,31 +575,41 @@ export default function ReadPage() {
                   <div className="rounded-xl bg-blue-50 p-4">
                     <p className="text-sm font-medium text-blue-600 mb-1">I heard:</p>
                     <p className="text-lg text-blue-900">
-                      {transcript || <span className="text-blue-400 animate-pulse">Listening...</span>}
+                      {transcript ? (
+                        transcript
+                      ) : isCurrentlyHolding || isListening || isRecording ? (
+                        <span className="text-blue-400 animate-pulse">Listening...</span>
+                      ) : (
+                        <span className="text-blue-400">No transcript captured yet.</span>
+                      )}
                     </p>
                   </div>
                 )}
 
-                {transcript && readState !== 'listening' && readState !== 'checking' && (
+                {canPlayRecording && (
                   <div className="flex justify-center">
                     <button
                       onClick={() => {
-                        if (playbackTarget === 'heard' && isSpeaking) {
-                          handleStopReading();
+                        if (playbackTarget === 'heard' && isPlayingRecording) {
+                          handleStopPlayback();
                         } else {
-                          handlePlayHeardSentence();
+                          void handlePlayHeardSentence();
                         }
                       }}
                       className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition ${
-                        playbackTarget === 'heard' && isSpeaking
+                        playbackTarget === 'heard' && isPlayingRecording
                           ? 'bg-sky-800 hover:bg-sky-900'
                           : 'bg-sky-600 hover:bg-sky-700'
                       }`}
                     >
-                      <span className="text-xl">{playbackTarget === 'heard' && isSpeaking ? '⏹️' : '🗣️'}</span>
-                      <span>{playbackTarget === 'heard' && isSpeaking ? 'Stop my reading' : 'Listen to my reading'}</span>
+                      <span className="text-xl">{playbackTarget === 'heard' && isPlayingRecording ? '⏹️' : '🗣️'}</span>
+                      <span>{playbackTarget === 'heard' && isPlayingRecording ? 'Stop my reading' : 'Listen to my reading'}</span>
                     </button>
                   </div>
+                )}
+
+                {!hasRecording && !isRecording && transcript && isVoiceReplaySupported && readState !== 'checking' && !isListening && (
+                  <p className="text-center text-sm text-sky-700">Saving your voice recording…</p>
                 )}
               </div>
             )}
@@ -491,44 +643,84 @@ export default function ReadPage() {
                 <p className="text-amber-700">{readAloudError}</p>
               </div>
             )}
+
+            {recordingError && (
+              <div className="mt-4 p-4 bg-amber-50 rounded-xl text-center">
+                <p className="text-amber-700">{recordingError}</p>
+              </div>
+            )}
           </div>
         )}
 
         {sentence && readState !== 'allDone' && readState !== 'loading' && (
           <div className="flex flex-col items-center gap-4">
-            {readState === 'ready' && (
+            {readState !== 'checking' && readState !== 'correct' && (
               <>
                 {isSupported ? (
-                  <button
-                    onClick={() => { void handleStartListening(); }}
-                    disabled={isPreparingMic}
-                    className="w-32 h-32 rounded-full bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white shadow-lg transition transform hover:scale-110 flex items-center justify-center"
-                  >
-                    <span className="text-5xl">🎤</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onPointerDown={handleMicPointerDown}
+                      onPointerUp={handleMicPointerUp}
+                      onPointerCancel={handleMicPointerCancel}
+                      onKeyDown={handleMicKeyDown}
+                      onKeyUp={handleMicKeyUp}
+                      onContextMenu={(event) => event.preventDefault()}
+                      disabled={!canStartHoldToRecord}
+                      aria-label={isCurrentlyHolding ? 'Release to stop recording' : 'Press and hold to record'}
+                      className={`flex h-32 w-32 items-center justify-center rounded-full text-white shadow-lg transition disabled:cursor-not-allowed disabled:bg-red-300 ${
+                        isCurrentlyHolding
+                          ? 'bg-red-600 animate-pulse'
+                          : 'bg-red-500 hover:scale-110 hover:bg-red-600'
+                      }`}
+                    >
+                      <span className="text-5xl">{isCurrentlyHolding ? '🔴' : '🎤'}</span>
+                    </button>
+                    <p className="max-w-md text-center text-gray-500">
+                      {isPreparingMic
+                        ? 'Getting the microphone ready. Keep holding if you want to start right away.'
+                        : isStoppingListening
+                          ? 'Finishing and saving your reading...'
+                          : isCurrentlyHolding
+                            ? 'Keep holding the button while you read. Release to stop and save.'
+                            : showRecordedReview
+                              ? 'Press and hold again to re-record, or submit this attempt with the button below.'
+                              : 'Press and hold the microphone while you read. Release to finish and save your attempt.'}
+                    </p>
+                  </>
                 ) : (
-                  <p className="text-red-600 text-center">
+                  <p className="text-center text-red-600">
                     Speech recognition is not supported on this device.
                     <br />Try Safari on iPhone/iPad or Safari/Chrome on Mac.
                   </p>
                 )}
-                <p className="text-gray-500 text-center">
-                  {isPreparingMic ? 'Getting the microphone ready...' : 'Tap the microphone and read the sentence'}
-                </p>
-              </>
-            )}
 
-            {readState === 'listening' && (
-              <>
-                <button
-                  onClick={handleStopListening}
-                  className="w-32 h-32 rounded-full bg-red-600 text-white shadow-lg animate-pulse flex items-center justify-center"
-                >
-                  <span className="text-5xl">⏹️</span>
-                </button>
-                <p className="text-red-600 font-semibold animate-pulse text-center">
-                  🔴 Listening... Read the sentence now, then tap stop.
-                </p>
+                <div className="flex flex-wrap justify-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => void handleCheck(transcript)}
+                    disabled={!canCheckMatch}
+                    className="rounded-xl bg-indigo-500 px-8 py-4 text-lg font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                  >
+                    {result && !result.is_correct ? 'Submit again' : 'Submit recording'}
+                  </button>
+
+                  {readState === 'tryAgain' && (
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      className="rounded-xl bg-gray-400 px-8 py-4 text-lg font-bold text-white transition hover:bg-gray-500"
+                    >
+                      Skip →
+                    </button>
+                  )}
+                </div>
+
+                {!transcript.trim() && hasRecording && (
+                  <p className="text-center text-sm text-amber-700">
+                    Your recording is saved and ready to replay, but no transcript was captured yet. Hold the mic again to re-record before submitting.
+                  </p>
+                )}
               </>
             )}
 
@@ -548,37 +740,12 @@ export default function ReadPage() {
               </button>
             )}
 
-            {readState === 'tryAgain' && (
-              <div className="flex flex-wrap justify-center gap-4">
-                <button
-                  onClick={handleRetry}
-                  className="px-8 py-4 bg-amber-500 text-white rounded-xl text-lg font-bold hover:bg-amber-600 transition"
-                >
-                  🔄 Try Again
-                </button>
-                {transcript && (
-                  <button
-                    onClick={() => void handleCheck(transcript)}
-                    className="px-8 py-4 bg-indigo-500 text-white rounded-xl text-lg font-bold hover:bg-indigo-600 transition"
-                  >
-                    Check Again
-                  </button>
-                )}
-                <button
-                  onClick={handleNext}
-                  className="px-8 py-4 bg-gray-400 text-white rounded-xl text-lg font-bold hover:bg-gray-500 transition"
-                >
-                  Skip →
-                </button>
-              </div>
-            )}
-
             {readState !== 'checking' && (
               <>
                 <div className="flex flex-wrap justify-center gap-3">
                   <button
                     onClick={() => void handleReadSentence('normal')}
-                    disabled={!isReadAloudSupported || isListening}
+                    disabled={!isReadAloudSupported || isListening || isHoldBusy}
                     className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-indigo-300 ${
                       playbackTarget === 'normal' && isSpeaking
                         ? 'bg-indigo-800 hover:bg-indigo-900'
@@ -591,7 +758,7 @@ export default function ReadPage() {
 
                   <button
                     onClick={() => void handleReadSentence('slow')}
-                    disabled={!isReadAloudSupported || isListening}
+                    disabled={!isReadAloudSupported || isListening || isHoldBusy}
                     className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-emerald-300 ${
                       playbackTarget === 'slow' && isSpeaking
                         ? 'bg-emerald-800 hover:bg-emerald-900'
@@ -602,15 +769,15 @@ export default function ReadPage() {
                     <span>{playbackTarget === 'slow' && isSpeaking ? 'Reading slowly...' : 'Read slowly'}</span>
                   </button>
 
-                  {isSpeaking && (
+                  {isSpeaking || isPlayingRecording ? (
                     <button
-                      onClick={handleStopReading}
+                      onClick={handleStopPlayback}
                       className="inline-flex items-center gap-3 rounded-xl bg-slate-600 px-5 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-slate-700"
                     >
                       <span className="text-xl">⏹️</span>
                       <span>Stop reading</span>
                     </button>
-                  )}
+                  ) : null}
                 </div>
 
                 <p className="text-center text-sm text-gray-500">
@@ -618,6 +785,12 @@ export default function ReadPage() {
                     ? 'Tap a button to hear the sentence before reading it aloud yourself.'
                     : 'Read-aloud is not supported in this browser.'}
                 </p>
+
+                {transcript && !hasRecording && !isVoiceReplaySupported && (
+                  <p className="text-center text-sm text-amber-700">
+                    This browser can capture your transcript, but it cannot replay your real voice recording.
+                  </p>
+                )}
               </>
             )}
           </div>
