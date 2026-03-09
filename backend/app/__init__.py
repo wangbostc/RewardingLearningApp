@@ -50,7 +50,7 @@ def create_app() -> FastAPI:
     )
 
     # Register routers
-    from app.routes import auth, lessons, progress, rewards, speech, shop, admin
+    from app.routes import auth, lessons, progress, rewards, speech, shop, admin, learning
 
     app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
     app.include_router(lessons.router, prefix="/api/lessons", tags=["Lessons"])
@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(speech.router, prefix="/api/speech", tags=["Speech"])
     app.include_router(shop.router, prefix="/api/shop", tags=["Shop"])
     app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+    app.include_router(learning.router, prefix="/api", tags=["Learning Engine"])
 
     @app.get("/")
     async def root():

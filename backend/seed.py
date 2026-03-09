@@ -18,6 +18,10 @@ from app.models import (
     Achievement,
     ReadingSentence,
     RewardItem,
+    LearningPath,
+    LearningUnit,
+    EngineLesson,
+    LearningActivity,
 )
 from werkzeug.security import generate_password_hash
 
@@ -139,6 +143,81 @@ def seed_database():
             db.add(lesson)
             lessons.append(lesson)
         db.flush()
+
+        # ==================== GENERIC LESSON ENGINE STARTER PACK ====================
+        starter_path = LearningPath(
+            name="Vocabulary Basics",
+            description="Starter path for the new generic lesson engine.",
+            order_index=1,
+        )
+        db.add(starter_path)
+        db.flush()
+
+        starter_unit = LearningUnit(
+            path_id=starter_path.id,
+            name="Animals",
+            order_index=1,
+        )
+        db.add(starter_unit)
+        db.flush()
+
+        starter_lesson = EngineLesson(
+            unit_id=starter_unit.id,
+            title="Animals 1",
+            level="beginner",
+            order_index=1,
+            estimated_minutes=5,
+        )
+        db.add(starter_lesson)
+        db.flush()
+
+        starter_activities = [
+            LearningActivity(
+                lesson_id=starter_lesson.id,
+                type="audio_to_picture",
+                prompt="Tap the cat",
+                instructions="Listen carefully, then choose the matching picture.",
+                activity_data={
+                    "audioUrl": "/audio/cat.mp3",
+                    "options": [
+                        {"id": "cat", "image": "/img/cat.png"},
+                        {"id": "dog", "image": "/img/dog.png"},
+                    ],
+                    "answer": "cat",
+                },
+                order_index=1,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=starter_lesson.id,
+                type="word_to_picture",
+                prompt="Find the bird",
+                instructions="Read the word and tap the right picture.",
+                activity_data={
+                    "word": "bird",
+                    "options": [
+                        {"id": "bird", "image": "/img/bird.png"},
+                        {"id": "fish", "image": "/img/fish.png"},
+                    ],
+                    "answer": "bird",
+                },
+                order_index=2,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=starter_lesson.id,
+                type="sentence_order",
+                prompt="Put the sentence in order",
+                instructions="Drag the words to make a sentence.",
+                activity_data={
+                    "tokens": ["I", "see", "a", "cat"],
+                    "answer": ["I", "see", "a", "cat"],
+                },
+                order_index=3,
+                points=15,
+            ),
+        ]
+        db.add_all(starter_activities)
 
         # ==================== READING SENTENCES ====================
         # Based on Australian M100W (Magic 100 Words) and Year 1 decodable patterns

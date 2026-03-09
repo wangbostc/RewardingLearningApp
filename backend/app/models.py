@@ -286,6 +286,88 @@ class RewardRedemption(Base):
     reward_item = relationship("RewardItem", back_populates="redemptions")
 
 
+class LearningPath(Base):
+    __tablename__ = "learning_paths"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    order_index = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    units = relationship(
+        "LearningUnit", back_populates="path", cascade="all, delete-orphan"
+    )
+
+
+class LearningUnit(Base):
+    __tablename__ = "learning_units"
+
+    id = Column(Integer, primary_key=True)
+    path_id = Column(Integer, ForeignKey("learning_paths.id"), nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    order_index = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    path = relationship("LearningPath", back_populates="units")
+    lessons = relationship(
+        "EngineLesson", back_populates="unit", cascade="all, delete-orphan"
+    )
+
+
+class EngineLesson(Base):
+    __tablename__ = "engine_lessons"
+
+    id = Column(Integer, primary_key=True)
+    unit_id = Column(Integer, ForeignKey("learning_units.id"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    level = Column(String(30), nullable=True)
+    order_index = Column(Integer, default=0)
+    estimated_minutes = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    unit = relationship("LearningUnit", back_populates="lessons")
+    activities = relationship(
+        "LearningActivity", back_populates="lesson", cascade="all, delete-orphan"
+    )
+
+
+class LearningActivity(Base):
+    __tablename__ = "learning_activities"
+
+    id = Column(Integer, primary_key=True)
+    lesson_id = Column(Integer, ForeignKey("engine_lessons.id"), nullable=False, index=True)
+    type = Column(String(60), nullable=False)
+    prompt = Column(Text, nullable=False)
+    instructions = Column(Text, nullable=True)
+    activity_data = Column(JSON, nullable=True)
+    order_index = Column(Integer, default=0)
+    points = Column(Integer, default=10)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    lesson = relationship("EngineLesson", back_populates="activities")
+    attempts = relationship(
+        "ActivityAttempt", back_populates="activity", cascade="all, delete-orphan"
+    )
+
+
+class ActivityAttempt(Base):
+    __tablename__ = "activity_attempts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    activity_id = Column(
+        Integer, ForeignKey("learning_activities.id"), nullable=False, index=True
+    )
+    answer = Column(JSON, nullable=True)
+    correct = Column(Boolean, nullable=True)
+    score = Column(Integer, default=0)
+    time_spent = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    activity = relationship("LearningActivity", back_populates="attempts")
+
+
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=80)
     email: EmailStr
@@ -518,3 +600,57 @@ class RewardRedemptionResponse(BaseModel):
 
 class RedemptionStatusUpdate(BaseModel):
     status: str  # approved, fulfilled, rejected
+
+
+class LearningPathResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    order_index: int
+
+    model_config = {"from_attributes": True}
+
+
+class LearningUnitResponse(BaseModel):
+    id: int
+    path_id: int
+    name: str
+    order_index: int
+
+    model_config = {"from_attributes": True}
+
+
+class EngineLessonSummaryResponse(BaseModel):
+    id: int
+    unit_id: int
+    title: str
+    level: Optional[str] = None
+    order_index: int
+    estimated_minutes: Optional[int] = None
+    activity_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class LearningActivityResponse(BaseModel):
+    id: int
+    lesson_id: int
+    type: str
+    prompt: str
+    instructions: Optional[str] = None
+    activity_data: Optional[dict] = None
+    order_index: int
+    points: int
+
+    model_config = {"from_attributes": True}
+
+
+class EngineLessonDetailResponse(BaseModel):
+    id: int
+    unit_id: int
+    title: str
+    level: Optional[str] = None
+    order_index: int
+    estimated_minutes: Optional[int] = None
+    activities: List[LearningActivityResponse] = Field(default_factory=list)
+

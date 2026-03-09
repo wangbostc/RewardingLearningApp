@@ -143,6 +143,23 @@ class ApiClient {
     });
   }
 
+  // Lesson engine endpoints
+  async getLearningPaths() {
+    return this.request<{ paths: LearningPath[] }>('/paths');
+  }
+
+  async getPathUnits(pathId: number) {
+    return this.request<{ units: LearningUnit[] }>(`/paths/${pathId}/units`);
+  }
+
+  async getUnitLessons(unitId: number) {
+    return this.request<{ lessons: EngineLessonSummary[] }>(`/units/${unitId}/lessons`);
+  }
+
+  async getEngineLesson(lessonId: number) {
+    return this.request<{ lesson: EngineLessonDetail }>(`/engine-lessons/${lessonId}`);
+  }
+
   // Progress endpoints
   async getUserProgress(userId: number) {
     return this.request<UserProgressData>(`/progress/user/${userId}`);
@@ -254,6 +271,51 @@ export interface Lesson {
   category: string;
   estimated_duration: number;
   exercise_count: number;
+}
+
+export interface LearningPath {
+  id: number;
+  name: string;
+  description?: string;
+  order_index: number;
+}
+
+export interface LearningUnit {
+  id: number;
+  path_id: number;
+  name: string;
+  order_index: number;
+}
+
+export interface LearningActivity {
+  id: number;
+  lesson_id: number;
+  type: string;
+  prompt: string;
+  instructions?: string;
+  activity_data?: Record<string, unknown>;
+  order_index: number;
+  points: number;
+}
+
+export interface EngineLessonSummary {
+  id: number;
+  unit_id: number;
+  title: string;
+  level?: string;
+  order_index: number;
+  estimated_minutes?: number;
+  activity_count: number;
+}
+
+export interface EngineLessonDetail {
+  id: number;
+  unit_id: number;
+  title: string;
+  level?: string;
+  order_index: number;
+  estimated_minutes?: number;
+  activities: LearningActivity[];
 }
 
 export interface ReadingSentence {

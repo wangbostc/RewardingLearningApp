@@ -332,7 +332,8 @@ export default function ReadPage() {
 
   if (!userId) return null;
 
-  const showRecordedReview = Boolean(transcript.trim() || hasRecording || isListening || isRecording || result);
+  const hasRecordedAttempt = Boolean(transcript.trim() || hasRecording);
+  const showSubmittedFeedback = Boolean(result);
   const isHoldBusy = isPreparingMic || isStoppingListening;
   const isCurrentlyHolding = readState === 'pressing';
   const canCheckMatch = Boolean(transcript.trim()) && readState !== 'checking' && !isListening && !isHoldBusy;
@@ -549,7 +550,7 @@ export default function ReadPage() {
               </div>
             </div>
 
-            {(showRecordedReview || result) && (
+            {showSubmittedFeedback && (
               <div className="mt-4 space-y-4">
                 {result && !result.is_correct ? (
                   <>
@@ -574,42 +575,8 @@ export default function ReadPage() {
                 ) : (
                   <div className="rounded-xl bg-blue-50 p-4">
                     <p className="text-sm font-medium text-blue-600 mb-1">I heard:</p>
-                    <p className="text-lg text-blue-900">
-                      {transcript ? (
-                        transcript
-                      ) : isCurrentlyHolding || isListening || isRecording ? (
-                        <span className="text-blue-400 animate-pulse">Listening...</span>
-                      ) : (
-                        <span className="text-blue-400">No transcript captured yet.</span>
-                      )}
-                    </p>
+                    <p className="text-lg text-blue-900">{transcript || 'No transcript captured.'}</p>
                   </div>
-                )}
-
-                {canPlayRecording && (
-                  <div className="flex justify-center">
-                    <button
-                      onClick={() => {
-                        if (playbackTarget === 'heard' && isPlayingRecording) {
-                          handleStopPlayback();
-                        } else {
-                          void handlePlayHeardSentence();
-                        }
-                      }}
-                      className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition ${
-                        playbackTarget === 'heard' && isPlayingRecording
-                          ? 'bg-sky-800 hover:bg-sky-900'
-                          : 'bg-sky-600 hover:bg-sky-700'
-                      }`}
-                    >
-                      <span className="text-xl">{playbackTarget === 'heard' && isPlayingRecording ? '⏹️' : '🗣️'}</span>
-                      <span>{playbackTarget === 'heard' && isPlayingRecording ? 'Stop my reading' : 'Listen to my reading'}</span>
-                    </button>
-                  </div>
-                )}
-
-                {!hasRecording && !isRecording && transcript && isVoiceReplaySupported && readState !== 'checking' && !isListening && (
-                  <p className="text-center text-sm text-sky-700">Saving your voice recording…</p>
                 )}
               </div>
             )}
@@ -683,7 +650,7 @@ export default function ReadPage() {
                           ? 'Finishing and saving your reading...'
                           : isCurrentlyHolding
                             ? 'Keep holding the button while you read. Release to stop and save.'
-                            : showRecordedReview
+                            : hasRecordedAttempt
                               ? 'Press and hold again to re-record, or submit this attempt with the button below.'
                               : 'Press and hold the microphone while you read. Release to finish and save your attempt.'}
                     </p>
@@ -705,6 +672,27 @@ export default function ReadPage() {
                     {result && !result.is_correct ? 'Submit again' : 'Submit recording'}
                   </button>
 
+                  {canPlayRecording && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (playbackTarget === 'heard' && isPlayingRecording) {
+                          handleStopPlayback();
+                        } else {
+                          void handlePlayHeardSentence();
+                        }
+                      }}
+                      className={`inline-flex items-center gap-3 rounded-xl px-5 py-3 text-base font-semibold text-white shadow-sm transition ${
+                        playbackTarget === 'heard' && isPlayingRecording
+                          ? 'bg-sky-800 hover:bg-sky-900'
+                          : 'bg-sky-600 hover:bg-sky-700'
+                      }`}
+                    >
+                      <span className="text-xl">{playbackTarget === 'heard' && isPlayingRecording ? '⏹️' : '🗣️'}</span>
+                      <span>{playbackTarget === 'heard' && isPlayingRecording ? 'Stop my reading' : 'Listen to my reading'}</span>
+                    </button>
+                  )}
+
                   {readState === 'tryAgain' && (
                     <button
                       type="button"
@@ -715,6 +703,10 @@ export default function ReadPage() {
                     </button>
                   )}
                 </div>
+
+                {!hasRecording && !isRecording && transcript && isVoiceReplaySupported && !isListening && (
+                  <p className="text-center text-sm text-sky-700">Saving your voice recording…</p>
+                )}
 
                 {!transcript.trim() && hasRecording && (
                   <p className="text-center text-sm text-amber-700">
