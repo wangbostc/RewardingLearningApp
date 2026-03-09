@@ -32,6 +32,46 @@ export interface RedeemItemResponse {
   };
 }
 
+export interface ActivityAttemptRequest {
+  profile_id?: number;
+  user_id?: number;
+  answer?: string | Record<string, unknown> | Array<unknown>;
+  time_spent?: number;
+}
+
+export interface ActivityAttemptResponse {
+  correct: boolean;
+  score: number;
+}
+
+export interface EngineLessonCompleteRequest {
+  profile_id?: number;
+  user_id?: number;
+}
+
+export interface EngineLessonCompleteResponse {
+  completed: boolean;
+  score: number;
+  unlock_threshold: number;
+  attempts: number;
+}
+
+export interface ChildProfile {
+  id: number;
+  user_id: number;
+  name: string;
+  age?: number;
+  avatar?: string;
+  created_at: string;
+}
+
+export interface ChildProfileCreateRequest {
+  user_id: number;
+  name: string;
+  age?: number;
+  avatar?: string;
+}
+
 export type CreateShopItemInput = Omit<ShopItem, 'id'>;
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
@@ -158,6 +198,35 @@ class ApiClient {
 
   async getEngineLesson(lessonId: number) {
     return this.request<{ lesson: EngineLessonDetail }>(`/engine-lessons/${lessonId}`);
+  }
+
+  async submitActivityAttempt(activityId: number, payload: ActivityAttemptRequest) {
+    return this.request<ActivityAttemptResponse>(`/activities/${activityId}/attempt`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async completeEngineLesson(lessonId: number, payload: EngineLessonCompleteRequest) {
+    return this.request<EngineLessonCompleteResponse>(`/engine-lessons/${lessonId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getProfiles(userId: number) {
+    return this.request<{ profiles: ChildProfile[] }>(`/profiles?user_id=${userId}`);
+  }
+
+  async createProfile(payload: ChildProfileCreateRequest) {
+    return this.request<{ profile: ChildProfile }>('/profiles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getProfileById(profileId: number) {
+    return this.request<{ profile: ChildProfile }>(`/profiles/${profileId}`);
   }
 
   // Progress endpoints

@@ -86,9 +86,25 @@ class User(Base):
     redemptions = relationship(
         "RewardRedemption", back_populates="user", cascade="all, delete-orphan"
     )
+    child_profiles = relationship(
+        "ChildProfile", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<User {self.username}>"
+
+
+class ChildProfile(Base):
+    __tablename__ = "child_profiles"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    age = Column(Integer, nullable=True)
+    avatar = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="child_profiles")
 
 
 class UserStats(Base):
@@ -368,6 +384,18 @@ class ActivityAttempt(Base):
     activity = relationship("LearningActivity", back_populates="attempts")
 
 
+class EngineLessonProgress(Base):
+    __tablename__ = "engine_lesson_progress"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    lesson_id = Column(Integer, ForeignKey("engine_lessons.id"), nullable=False, index=True)
+    completed = Column(Boolean, default=False)
+    score = Column(Float, default=0.0)
+    attempts = Column(Integer, default=0)
+    last_attempt_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=80)
     email: EmailStr
@@ -410,6 +438,24 @@ class UserStatsResponse(BaseModel):
 class UserProfileResponse(BaseModel):
     user: UserResponse
     stats: Optional[UserStatsResponse] = None
+
+
+class ChildProfileCreate(BaseModel):
+    user_id: int
+    name: str = Field(..., min_length=1, max_length=120)
+    age: Optional[int] = None
+    avatar: Optional[str] = None
+
+
+class ChildProfileResponse(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    age: Optional[int] = None
+    avatar: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class LessonResponse(BaseModel):
@@ -653,4 +699,28 @@ class EngineLessonDetailResponse(BaseModel):
     order_index: int
     estimated_minutes: Optional[int] = None
     activities: List[LearningActivityResponse] = Field(default_factory=list)
+
+
+class ActivityAttemptSubmit(BaseModel):
+    profile_id: Optional[int] = None
+    user_id: Optional[int] = None
+    answer: Optional[str | dict | list] = None
+    time_spent: Optional[float] = None
+
+
+class ActivityAttemptResult(BaseModel):
+    correct: bool
+    score: int
+
+
+class EngineLessonCompleteRequest(BaseModel):
+    profile_id: Optional[int] = None
+    user_id: Optional[int] = None
+
+
+class EngineLessonCompleteResponse(BaseModel):
+    completed: bool
+    score: float
+    unlock_threshold: float
+    attempts: int
 
