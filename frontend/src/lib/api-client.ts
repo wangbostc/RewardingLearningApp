@@ -1,5 +1,53 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+export interface ApiError {
+  status?: number;
+  detail?: string;
+  message?: string;
+}
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  is_admin?: boolean;
+}
+
+export interface Achievement {
+  id: number;
+  name: string;
+  description: string;
+  badge_icon: string;
+  unlocked_at: string;
+}
+
+export interface UserAchievementsResponse {
+  achievements: Achievement[];
+}
+
+export interface RedeemItemResponse {
+  message?: string;
+  redemption?: {
+    id?: number;
+    remaining_points?: number;
+  };
+}
+
+export type CreateShopItemInput = Omit<ShopItem, 'id'>;
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'object' && error !== null) {
+    const candidate = error as ApiError;
+    if (typeof candidate.detail === 'string' && candidate.detail.trim()) {
+      return candidate.detail;
+    }
+    if (typeof candidate.message === 'string' && candidate.message.trim()) {
+      return candidate.message;
+    }
+  }
+
+  return fallback;
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -34,14 +82,14 @@ class ApiClient {
 
   // Auth endpoints
   async register(username: string, email: string, password: string, age?: number) {
-    return this.request('/auth/register', {
+    return this.request<AuthUser>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, email, password, age }),
     });
   }
 
   async login(username: string, password: string) {
-    return this.request<{ id: number; username: string; is_admin?: boolean }>(
+    return this.request<AuthUser>(
       '/auth/login',
       {
         method: 'POST',
@@ -106,7 +154,7 @@ class ApiClient {
   }
 
   async redeemItem(itemId: number, userId: number) {
-    return this.request(`/shop/redeem/${itemId}`, {
+    return this.request<RedeemItemResponse>(`/shop/redeem/${itemId}`, {
       method: 'POST',
       body: JSON.stringify({ user_id: userId }),
     });
@@ -120,7 +168,7 @@ class ApiClient {
 
   // Rewards endpoints
   async getUserAchievements(userId: number) {
-    return this.request(`/rewards/achievements/${userId}`);
+    return this.request<UserAchievementsResponse>(`/rewards/achievements/${userId}`);
   }
 
   async checkAchievements(userId: number) {
@@ -134,7 +182,7 @@ class ApiClient {
     return this.request<{ items: ShopItem[] }>('/admin/shop/items');
   }
 
-  async adminCreateItem(item: Omit<ShopItem, 'id'>) {
+  async adminCreateItem(item: CreateShopItemInput) {
     return this.request('/admin/shop/items', {
       method: 'POST',
       body: JSON.stringify(item),

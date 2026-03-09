@@ -10,29 +10,31 @@ export default function ProgressPage() {
   const navigate = useNavigate();
 
   const userId = localStorage.getItem('userId');
+  const parsedUserId = userId ? Number.parseInt(userId, 10) : Number.NaN;
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || Number.isNaN(parsedUserId)) {
       navigate('/login');
       return;
     }
-    fetchProgress();
-  }, [userId, navigate]);
 
-  const fetchProgress = async () => {
-    try {
-      const result = await apiClient.getUserProgress(parseInt(userId!));
-      setData(result);
-    } catch (err) {
-      console.error('Failed to load progress:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadProgress = async () => {
+      try {
+        const result = await apiClient.getUserProgress(parsedUserId);
+        setData(result);
+      } catch (err) {
+        console.error('Failed to load progress:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadProgress();
+  }, [navigate, parsedUserId, userId]);
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+      <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
         <Nav showBack />
         <div className="flex items-center justify-center h-96 text-gray-600">Loading...</div>
       </main>
@@ -40,7 +42,7 @@ export default function ProgressPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
       <Nav showBack />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -101,4 +103,3 @@ export default function ProgressPage() {
     </main>
   );
 }
-

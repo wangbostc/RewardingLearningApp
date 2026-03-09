@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import apiClient from '@/lib/api-client';
+import apiClient, { getApiErrorMessage } from '@/lib/api-client';
 
 export default function RegisterPage() {
   const [username, setUsername] = useState('');
@@ -17,19 +17,19 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const user = await apiClient.register(username, email, password, age ? parseInt(age) : undefined) as any;
+      const user = await apiClient.register(username, email, password, age ? parseInt(age) : undefined);
       localStorage.setItem('userId', String(user.id));
       localStorage.setItem('username', user.username);
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.detail || 'Registration failed. Please try again.');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Registration failed. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100 flex items-center justify-center px-4">
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-indigo-600">🎓 Join Us!</h1>
@@ -109,4 +109,3 @@ export default function RegisterPage() {
     </main>
   );
 }
-

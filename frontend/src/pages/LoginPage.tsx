@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import apiClient from '@/lib/api-client';
+import apiClient, { getApiErrorMessage } from '@/lib/api-client';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -15,20 +15,20 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const user = await apiClient.login(username, password) as any;
+      const user = await apiClient.login(username, password);
       localStorage.setItem('userId', String(user.id));
       localStorage.setItem('username', user.username);
       localStorage.setItem('isAdmin', String(user.is_admin || false));
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.detail || 'Login failed. Please try again.');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Login failed. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100 flex items-center justify-center px-4">
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-indigo-600">🎓 Welcome Back!</h1>
@@ -83,4 +83,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

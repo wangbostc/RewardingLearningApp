@@ -61,8 +61,7 @@ export default function AdminPage() {
       await apiClient.adminCreateItem({
         ...newItem,
         is_active: true,
-        id: 0,
-      } as any);
+      });
       setShowNewItem(false);
       setNewItem({ name: '', description: '', emoji: '🎁', points_cost: 50 });
       const data = await apiClient.adminGetItems();
@@ -100,7 +99,7 @@ export default function AdminPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+    <main className="min-h-screen bg-linear-to-b from-gray-50 to-gray-100">
       <Nav showBack />
 
       <div className="max-w-5xl mx-auto px-4 py-8">
@@ -282,7 +281,7 @@ export default function AdminPage() {
                 <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
                   <h2 className="font-bold text-gray-900">Reading Sentences ({sentences.length})</h2>
                 </div>
-                <div className="divide-y max-h-[600px] overflow-y-auto">
+                <div className="divide-y max-h-150 overflow-y-auto">
                   {sentences.map((s) => (
                     <div key={s.id} className="p-4 flex items-center justify-between">
                       <div className="flex-1">
@@ -312,4 +311,3 @@ export default function AdminPage() {
     </main>
   );
 }
-

@@ -340,7 +340,7 @@ export default function ReadPage() {
   const canStartHoldToRecord = !isHoldBusy && readState !== 'checking' && readState !== 'correct';
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100 relative overflow-hidden">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100 relative overflow-hidden">
       <Nav showBack backTo="/dashboard" backLabel="Dashboard" />
 
       {showConfetti && (

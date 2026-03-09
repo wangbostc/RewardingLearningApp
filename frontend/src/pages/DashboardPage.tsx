@@ -12,29 +12,31 @@ export default function DashboardPage() {
   const userId = localStorage.getItem('userId');
   const username = localStorage.getItem('username');
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  const parsedUserId = userId ? Number.parseInt(userId, 10) : Number.NaN;
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || Number.isNaN(parsedUserId)) {
       navigate('/login');
       return;
     }
-    fetchData();
-  }, [userId, navigate]);
 
-  const fetchData = async () => {
-    try {
-      const data = await apiClient.getUserProgress(parseInt(userId!));
-      setStats(data.stats);
-    } catch (err) {
-      console.error('Failed to load progress:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadDashboard = async () => {
+      try {
+        const data = await apiClient.getUserProgress(parsedUserId);
+        setStats(data.stats);
+      } catch (err) {
+        console.error('Failed to load progress:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadDashboard();
+  }, [navigate, parsedUserId, userId]);
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+      <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
         <Nav />
         <div className="flex items-center justify-center h-96">
           <div className="text-xl text-gray-600">Loading...</div>
@@ -44,7 +46,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
       <Nav />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -143,4 +145,3 @@ export default function DashboardPage() {
     </main>
   );
 }
-

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '@/components/Nav';
-import apiClient from '@/lib/api-client';
+import apiClient, { getApiErrorMessage } from '@/lib/api-client';
 import type { ShopItem, Redemption } from '@/lib/api-client';
 
 export default function ShopPage() {
@@ -14,46 +14,47 @@ export default function ShopPage() {
   const navigate = useNavigate();
 
   const userId = localStorage.getItem('userId');
+  const parsedUserId = userId ? Number.parseInt(userId, 10) : Number.NaN;
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || Number.isNaN(parsedUserId)) {
       navigate('/login');
       return;
     }
-    fetchData();
-  }, [userId, navigate]);
 
-  const fetchData = async () => {
-    try {
-      const [shopData, progressData, redemptionData] = await Promise.all([
-        apiClient.getShopItems(),
-        apiClient.getUserProgress(parseInt(userId!)),
-        apiClient.getUserRedemptions(parseInt(userId!)),
-      ]);
-      setItems(shopData.items || []);
-      setPoints(progressData.stats.total_points);
-      setRedemptions(redemptionData.redemptions || []);
-    } catch (err) {
-      console.error('Failed to load shop:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadShop = async () => {
+      try {
+        const [shopData, progressData, redemptionData] = await Promise.all([
+          apiClient.getShopItems(),
+          apiClient.getUserProgress(parsedUserId),
+          apiClient.getUserRedemptions(parsedUserId),
+        ]);
+        setItems(shopData.items || []);
+        setPoints(progressData.stats.total_points);
+        setRedemptions(redemptionData.redemptions || []);
+      } catch (err) {
+        console.error('Failed to load shop:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadShop();
+  }, [navigate, parsedUserId, userId]);
 
   const handleRedeem = async (item: ShopItem) => {
-    if (!userId) return;
+    if (Number.isNaN(parsedUserId)) return;
     setRedeemingId(item.id);
     setMessage('');
 
     try {
-      const res = await apiClient.redeemItem(item.id, parseInt(userId)) as any;
+      const res = await apiClient.redeemItem(item.id, parsedUserId);
       setMessage(res.message || `Redeemed "${item.name}"!`);
-      setPoints(res.redemption?.remaining_points ?? points - item.points_cost);
-      // Refresh redemptions
-      const redemptionData = await apiClient.getUserRedemptions(parseInt(userId));
+      setPoints(res.redemption?.remaining_points ?? Math.max(points - item.points_cost, 0));
+      const redemptionData = await apiClient.getUserRedemptions(parsedUserId);
       setRedemptions(redemptionData.redemptions || []);
-    } catch (err: any) {
-      setMessage(err.detail || 'Failed to redeem. Try again.');
+    } catch (err: unknown) {
+      setMessage(getApiErrorMessage(err, 'Failed to redeem. Try again.'));
     } finally {
       setRedeemingId(null);
     }
@@ -61,7 +62,7 @@ export default function ShopPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+      <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
         <Nav showBack />
         <div className="flex items-center justify-center h-96">
           <div className="text-xl text-gray-600">Loading shop...</div>
@@ -71,7 +72,7 @@ export default function ShopPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
       <Nav showBack />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -97,7 +98,7 @@ export default function ShopPage() {
               <div key={item.id} className="bg-white rounded-xl shadow-md p-6 flex flex-col">
                 <div className="text-5xl text-center mb-3">{item.emoji || '🎁'}</div>
                 <h3 className="text-lg font-bold text-gray-900 text-center mb-2">{item.name}</h3>
-                <p className="text-sm text-gray-500 text-center mb-4 flex-grow">{item.description}</p>
+                <p className="text-sm text-gray-500 text-center mb-4 grow">{item.description}</p>
                 <div className="text-center mb-3">
                   <span className="text-lg font-bold text-indigo-600">⭐ {item.points_cost}</span>
                 </div>
@@ -155,4 +156,3 @@ export default function ShopPage() {
     </main>
   );
 }
-

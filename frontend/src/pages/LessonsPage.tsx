@@ -39,7 +39,7 @@ export default function LessonsPage() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
       <Nav showBack />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -93,4 +93,3 @@ export default function LessonsPage() {
     </main>
   );
 }
-

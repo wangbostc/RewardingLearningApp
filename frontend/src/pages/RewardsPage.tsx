@@ -2,14 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '@/components/Nav';
 import apiClient from '@/lib/api-client';
-
-interface Achievement {
-  id: number;
-  name: string;
-  description: string;
-  badge_icon: string;
-  unlocked_at: string;
-}
+import type { Achievement } from '@/lib/api-client';
 
 export default function RewardsPage() {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
@@ -17,30 +10,31 @@ export default function RewardsPage() {
   const navigate = useNavigate();
 
   const userId = localStorage.getItem('userId');
+  const parsedUserId = userId ? Number.parseInt(userId, 10) : Number.NaN;
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || Number.isNaN(parsedUserId)) {
       navigate('/login');
       return;
     }
-    fetchData();
-  }, [userId, navigate]);
 
-  const fetchData = async () => {
-    try {
-      // Check for new achievements first
-      await apiClient.checkAchievements(parseInt(userId!));
-      const data = await apiClient.getUserAchievements(parseInt(userId!)) as any;
-      setAchievements(data.achievements || []);
-    } catch (err) {
-      console.error('Failed to load achievements:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadAchievements = async () => {
+      try {
+        await apiClient.checkAchievements(parsedUserId);
+        const data = await apiClient.getUserAchievements(parsedUserId);
+        setAchievements(data.achievements || []);
+      } catch (err) {
+        console.error('Failed to load achievements:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadAchievements();
+  }, [navigate, parsedUserId, userId]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100">
+    <main className="min-h-screen bg-linear-to-b from-blue-50 to-indigo-100">
       <Nav showBack />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -72,4 +66,3 @@ export default function RewardsPage() {
     </main>
   );
 }
-
