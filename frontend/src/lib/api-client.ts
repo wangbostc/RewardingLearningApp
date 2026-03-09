@@ -356,13 +356,98 @@ export interface LearningUnit {
   order_index: number;
 }
 
+export type LearningActivityType =
+  | 'audio_to_picture'
+  | 'audio_to_action'
+  | 'word_to_picture'
+  | 'phonics_build_word'
+  | 'speak_sentence'
+  | 'story_listen'
+  | 'story_question'
+  | 'memory_match'
+  | 'listen_and_type'
+  | 'sentence_order'
+  | 'sentence_builder'
+  | 'role_play'
+  | 'describe_picture'
+  | 'daily_practice'
+  | 'reward_system'
+  | 'adaptive_review';
+
+interface RolePlayStep {
+  speaker: 'app' | 'child';
+  text?: string;
+  expected?: string;
+}
+
+export type LearningActivityData =
+  | {
+      audioUrl: string;
+      objects?: Array<{ id: string; image: string }>;
+      options?: Array<{ id: string; image: string }>;
+      answer: string;
+    }
+  | {
+      image: string;
+      letters: string[];
+      answer: string;
+    }
+  | {
+      sentence: string;
+      audio_reference?: string;
+      answer?: string;
+    }
+  | {
+      pages: Array<{ image: string; text: string }>;
+      audio?: string;
+    }
+  | {
+      question: string;
+      options: string[];
+      answer: string;
+    }
+  | {
+      pairs: Array<{ word: string; image: string }>;
+      answer?: { pairs: string[] };
+    }
+  | {
+      audio: string;
+      answer: string;
+    }
+  | {
+      words?: string[];
+      tokens?: string[];
+      answer: string[];
+    }
+  | {
+      dialogue: RolePlayStep[];
+    }
+  | {
+      image: string;
+      prompt: string;
+    }
+  | {
+      plan: string[];
+      duration_minutes: number;
+    }
+  | {
+      stars_per_lesson: number;
+      unlock_at: number;
+      reward: string;
+    }
+  | {
+      threshold: number;
+      action: string;
+    }
+  | Record<string, unknown>;
+
 export interface LearningActivity {
   id: number;
   lesson_id: number;
-  type: string;
+  type: LearningActivityType;
   prompt: string;
   instructions?: string;
-  activity_data?: Record<string, unknown>;
+  activity_data?: LearningActivityData;
   order_index: number;
   points: number;
 }

@@ -92,6 +92,15 @@ export default function DashboardPage() {
           </Link>
 
           <Link
+            to="/lesson-engine"
+            className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-2xl shadow-lg p-8 text-center transition transform hover:scale-105"
+          >
+            <div className="text-6xl mb-4">🧩</div>
+            <div className="text-2xl font-bold">Lesson Engine</div>
+            <div className="text-indigo-100 mt-2">Try the new module activities.</div>
+          </Link>
+
+          <Link
             to="/shop"
             className="bg-purple-500 hover:bg-purple-600 text-white rounded-2xl shadow-lg p-8 text-center transition transform hover:scale-105"
           >

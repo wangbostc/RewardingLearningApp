@@ -171,6 +171,16 @@ def seed_database():
         db.add(starter_lesson)
         db.flush()
 
+        modules_lesson = EngineLesson(
+            unit_id=starter_unit.id,
+            title="Module Sampler",
+            level="beginner",
+            order_index=2,
+            estimated_minutes=10,
+        )
+        db.add(modules_lesson)
+        db.flush()
+
         starter_activities = [
             LearningActivity(
                 lesson_id=starter_lesson.id,
@@ -218,6 +228,185 @@ def seed_database():
             ),
         ]
         db.add_all(starter_activities)
+
+        module_sampler_activities = [
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="audio_to_action",
+                prompt="Touch the red apple",
+                instructions="Listen and tap the right object.",
+                activity_data={
+                    "audioUrl": "/audio/touch_red_apple.mp3",
+                    "objects": [
+                        {"id": "apple_red", "image": "/img/apple_red.png"},
+                        {"id": "apple_green", "image": "/img/apple_green.png"},
+                        {"id": "banana", "image": "/img/banana.png"},
+                    ],
+                    "answer": "apple_red",
+                },
+                order_index=1,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="phonics_build_word",
+                prompt="Build the word for the picture",
+                instructions="Drag letters to spell the word.",
+                activity_data={
+                    "image": "/img/cat.png",
+                    "letters": ["C", "A", "T", "B", "D"],
+                    "answer": "CAT",
+                },
+                order_index=2,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="speak_sentence",
+                prompt="Read the sentence out loud",
+                instructions="Tap record and say the sentence.",
+                activity_data={
+                    "sentence": "I see a cat",
+                    "audio_reference": "/audio/i_see_a_cat.mp3",
+                    "answer": "I see a cat",
+                },
+                order_index=3,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="story_listen",
+                prompt="Listen to the short story",
+                instructions="Play audio and follow each page.",
+                activity_data={
+                    "pages": [
+                        {"image": "/img/story_cat_sleeping.png", "text": "This is a cat."},
+                        {"image": "/img/story_cat_sleeping2.png", "text": "The cat is sleeping."},
+                    ],
+                    "audio": "/audio/story_cat.mp3",
+                },
+                order_index=4,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="story_question",
+                prompt="Who is sleeping?",
+                instructions="Choose the correct answer.",
+                activity_data={
+                    "question": "Who is sleeping?",
+                    "options": ["cat", "dog", "bird"],
+                    "answer": "cat",
+                },
+                order_index=5,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="memory_match",
+                prompt="Match each word to its picture",
+                instructions="Flip cards to make matches.",
+                activity_data={
+                    "pairs": [
+                        {"word": "cat", "image": "/img/cat.png"},
+                        {"word": "dog", "image": "/img/dog.png"},
+                    ],
+                    "answer": {"pairs": ["cat", "dog"]},
+                },
+                order_index=6,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="listen_and_type",
+                prompt="Type what you hear",
+                instructions="Listen and type the sentence.",
+                activity_data={
+                    "audio": "/audio/i_see_a_dog.mp3",
+                    "answer": "I see a dog",
+                },
+                order_index=7,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="sentence_builder",
+                prompt="Build the sentence",
+                instructions="Arrange words in the correct order.",
+                activity_data={
+                    "words": ["see", "I", "cat", "a"],
+                    "answer": ["I", "see", "a", "cat"],
+                },
+                order_index=8,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="role_play",
+                prompt="Practice the dialogue",
+                instructions="Say each response when it is your turn.",
+                activity_data={
+                    "dialogue": [
+                        {"speaker": "app", "text": "Hello!"},
+                        {"speaker": "child", "expected": "Hello!"},
+                        {"speaker": "app", "text": "How are you?"},
+                        {"speaker": "child", "expected": "I am fine."},
+                    ]
+                },
+                order_index=9,
+                points=15,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="describe_picture",
+                prompt="What is happening in the picture?",
+                instructions="Describe the picture in your own words.",
+                activity_data={
+                    "image": "/img/boy_eating_apple.png",
+                    "prompt": "What is happening in the picture?",
+                },
+                order_index=10,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="daily_practice",
+                prompt="Complete today's 5-minute routine",
+                instructions="Finish one listening, one speaking, and one vocabulary task.",
+                activity_data={
+                    "plan": ["listening", "speaking", "vocabulary"],
+                    "duration_minutes": 5,
+                },
+                order_index=11,
+                points=10,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="reward_system",
+                prompt="Earn stars for lesson completion",
+                instructions="Collect stars to unlock stickers.",
+                activity_data={
+                    "stars_per_lesson": 3,
+                    "unlock_at": 10,
+                    "reward": "sticker_pack",
+                },
+                order_index=12,
+                points=5,
+            ),
+            LearningActivity(
+                lesson_id=modules_lesson.id,
+                type="adaptive_review",
+                prompt="Review difficult words",
+                instructions="Retry items with low accuracy.",
+                activity_data={
+                    "threshold": 60,
+                    "action": "schedule_review_lesson",
+                },
+                order_index=13,
+                points=5,
+            ),
+        ]
+        db.add_all(module_sampler_activities)
 
         # ==================== READING SENTENCES ====================
         # Based on Australian M100W (Magic 100 Words) and Year 1 decodable patterns

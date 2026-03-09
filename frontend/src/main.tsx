@@ -13,6 +13,7 @@ import LessonsPage from './pages/LessonsPage'
 import ProgressPage from './pages/ProgressPage'
 import RewardsPage from './pages/RewardsPage'
 import AdminPage from './pages/AdminPage'
+import LessonEnginePage from './pages/LessonEnginePage'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -28,6 +29,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/progress" element={<ProgressPage />} />
         <Route path="/rewards" element={<RewardsPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/lesson-engine" element={<LessonEnginePage />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,
